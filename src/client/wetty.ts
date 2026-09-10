@@ -1,5 +1,5 @@
 import { dom, library } from '@fortawesome/fontawesome-svg-core';
-import { faCogs, faKeyboard } from '@fortawesome/free-solid-svg-icons';
+import { faCogs, faKey, faKeyboard } from '@fortawesome/free-solid-svg-icons';
 
 import '../assets/scss/styles.scss';
 
@@ -34,6 +34,7 @@ setupBrowserHostTrust(socket);
 // Setup for fontawesome
 library.add(faCogs);
 library.add(faKeyboard);
+library.add(faKey);
 dom.watch();
 
 function onResize(term: Term): () => void {

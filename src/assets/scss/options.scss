@@ -1,5 +1,35 @@
 @use './variables';
 
+// Aligned icon controls in the top-right corner.
+#options > .toggler,
+#functions > .toggler,
+#ssh-key-create {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: variables.$lgrey;
+  font-size: 16px;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: variables.$white;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
 // ─── Config Panel ──────────────────────────────────────────────────────────────
 
 #options {
@@ -10,24 +40,10 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   .toggler {
-    color: variables.$lgrey;
-    display: inline-block;
-    font-size: 16px;
     position: absolute;
     right: 0;
     top: 0;
     z-index: 21;
-    padding: 6px;
-    border-radius: 6px;
-    transition:
-      color 0.2s ease,
-      background-color 0.2s ease;
-    text-decoration: none;
-
-    &:hover {
-      color: variables.$white;
-      background-color: rgba(255, 255, 255, 0.1);
-    }
   }
 
   .editor {
@@ -75,23 +91,6 @@
   right: 1em;
   top: 1em;
   z-index: 20;
-
-  > a.toggler {
-    display: inline-block;
-    padding: 6px;
-    border-radius: 6px;
-    color: variables.$lgrey;
-    text-decoration: none;
-    font-size: 16px;
-    transition:
-      color 0.2s ease,
-      background-color 0.2s ease;
-
-    &:hover {
-      color: variables.$white;
-      background-color: rgba(255, 255, 255, 0.1);
-    }
-  }
 
   .onscreen-buttons {
     position: absolute;
@@ -208,39 +207,30 @@
 // Temporary browser key enrollment, also available above the disconnect overlay.
 #ssh-key-tools {
   position: fixed;
-  top: 6.5em;
+  top: 6em;
   right: 1em;
   z-index: 101;
-  max-width: min(280px, calc(100vw - 2em));
-  text-align: right;
+  width: 32px;
   font-family: system-ui, sans-serif;
-  font-size: 0.85rem;
   color: variables.$white;
 
-  button {
-    padding: 0.5em 0.8em;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
-    background: rgba(40, 40, 40, 0.95);
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-
-    &:hover,
-    &:focus-visible {
-      background: rgba(60, 60, 60, 0.95);
-    }
-
-    &:disabled {
-      opacity: 0.65;
-      cursor: wait;
-    }
+  button:disabled {
+    opacity: 0.65;
+    cursor: wait;
   }
 
   p {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    box-sizing: border-box;
+    width: min(280px, calc(100vw - 2em));
+    margin: 0.5em 0 0;
     padding: 0.6em;
     border-radius: 6px;
     background: rgba(20, 20, 20, 0.95);
+    font-size: 0.85rem;
+    text-align: right;
     overflow-wrap: anywhere;
 
     &:empty {

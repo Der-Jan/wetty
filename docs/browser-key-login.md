@@ -1,9 +1,17 @@
 # Log in with the browser key (authorized_keys)
 
-This mode uses the RSA key created by **Create / show SSH key**, including keys
-created before the signing bridge was added. The private CryptoKey remains in
-IndexedDB and is never exported. The SSH server checks its public key against
-the fixed account's `authorized_keys`. Vault and certificates are not used yet.
+This mode uses the RSA key created by the **key icon**, including keys created
+before the signing bridge was added. The private CryptoKey remains in IndexedDB
+and is never exported. The SSH server checks its public key against the fixed
+account's `authorized_keys`. Vault and certificates are not used yet.
+
+Click the key icon while your SSH terminal is ready to paste the public key at
+the cursor, without pressing Enter. For example, open `~/.ssh/authorized_keys`
+in an editor, enter insert mode on a new line, click the icon, then save the
+file yourself. The button does not execute a command or edit the file for you.
+It also prints the public key to the browser console, which remains available
+when disconnected. If the terminal reconnects while the key is loading, no key
+is pasted into the replacement session.
 
 After building, start WeTTY with your actual values:
 
