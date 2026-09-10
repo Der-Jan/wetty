@@ -206,3 +206,18 @@ The integration suite covers successful key login, password prompts after key
 rejection or unavailable browser storage, failed host verification before
 signing, and disconnect during signing. Actual Edge persistence across a full
 browser restart remains a manual check.
+
+## Upstream integration boundaries
+
+Feature styles live in `src/assets/scss/browserSsh.scss`, loaded with one `@use`
+from `styles.scss`. The upstream `options.scss` and server HTML template are
+unchanged. `src/client/wetty/auth/control.ts` creates the key control, and
+`bootstrap.ts` registers the icon, control, signer, host trust, and connection
+hello message. The browser entry point calls `setupBrowserSsh(socket)` after
+terminal handlers are installed and before connecting.
+
+`src/server/browserAgent/integration.ts` owns browser-mode validation, dispatch,
+active-session tracking, and shutdown cleanup. `origin.ts` supplies the
+Socket.IO handshake policy. The existing server files contain only the calls
+needed to integrate these modules. Process spawning and shared flow control
+remain a separate refactoring concern; this extraction does not change them.

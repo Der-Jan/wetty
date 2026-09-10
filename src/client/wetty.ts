@@ -1,11 +1,9 @@
 import { dom, library } from '@fortawesome/fontawesome-svg-core';
-import { faCogs, faKey, faKeyboard } from '@fortawesome/free-solid-svg-icons';
+import { faCogs, faKeyboard } from '@fortawesome/free-solid-svg-icons';
 
 import '../assets/scss/styles.scss';
 
-import { setupSshKeyButton } from './wetty/auth/button';
-import { setupBrowserHostTrust } from './wetty/auth/hostSession';
-import { setupBrowserSigner } from './wetty/auth/session';
+import { setupBrowserSsh } from './wetty/auth/bootstrap';
 
 import { disconnect } from './wetty/disconnect';
 import { overlay } from './wetty/disconnect/elements';
@@ -27,14 +25,9 @@ if ('serviceWorker' in navigator) {
   }
 }
 
-setupSshKeyButton();
-setupBrowserSigner(socket);
-setupBrowserHostTrust(socket);
-
 // Setup for fontawesome
 library.add(faCogs);
 library.add(faKeyboard);
-library.add(faKey);
 dom.watch();
 
 function onResize(term: Term): () => void {
@@ -102,10 +95,10 @@ socket.on('connect', () => {
       .off('disconnect', disconnect)
       .off('error');
   });
-  socket.emit('browser-key:hello');
 });
 
 socket.on('connect_error', (error: Error) => {
   disconnect(error.message);
 });
+setupBrowserSsh(socket);
 socket.connect();

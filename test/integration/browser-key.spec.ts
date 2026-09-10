@@ -14,7 +14,7 @@ import { browserHostTrust } from '../../src/client/wetty/auth/hostTrust';
 import { loadSshKey } from '../../src/client/wetty/auth/keys';
 import { setupBrowserSigner } from '../../src/client/wetty/auth/session';
 import { validateBrowserSsh } from '../../src/server/browserAgent/command';
-import { browserKeySession } from '../../src/server/browserAgent/session';
+import { browserSshIntegration } from '../../src/server/browserAgent/integration';
 import { BROWSER_KEY_SCOPE } from '../../src/shared/browserAgent';
 import { sshDefault } from '../../src/shared/defaults';
 import type { HostApproval } from '../../src/client/wetty/auth/hostTrust';
@@ -133,12 +133,14 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
   ): Promise<{ output: string; signs: number }> {
     const http = createServer();
     const server = new Server(http);
-    let closeSession: (() => Promise<void>) | undefined;
     let closeCount = 0;
+    const browserSsh = await browserSshIntegration(settings);
+    const sessions = browserSsh.attach(server, command, () => {
+      closeCount += 1;
+    });
+    const closeSession = (): Promise<void> => sessions.close();
     server.on('connection', (socket) => {
-      closeSession = browserKeySession(socket, settings, command, () => {
-        closeCount += 1;
-      });
+      assert.equal(sessions.handle(socket), true);
     });
     http.listen(0, '127.0.0.1');
     await once(http, 'listening');
@@ -175,12 +177,12 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
       });
       client.connect();
       await done;
-      await closeSession?.();
+      await closeSession();
       assert.equal(closeCount, 1);
       return { output, signs };
     } finally {
       client.disconnect();
-      await closeSession?.();
+      await closeSession();
       await server.close();
     }
   }

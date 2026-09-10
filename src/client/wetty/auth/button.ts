@@ -1,10 +1,13 @@
+import { createSshKeyControl } from './control';
 import { diagnoseSshKey } from './diagnostics';
+
+const boundButtons = new WeakSet<HTMLButtonElement>();
 
 /** Bind once at page startup, independently of terminal connection/reconnection. */
 export function setupSshKeyButton(): void {
-  const button = document.querySelector<HTMLButtonElement>('#ssh-key-create');
-  const status = document.getElementById('ssh-key-status');
-  if (button === null || status === null) return;
+  const { button, status } = createSshKeyControl();
+  if (boundButtons.has(button)) return;
+  boundButtons.add(button);
 
   let dismissNotice: (() => void) | undefined;
 

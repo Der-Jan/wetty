@@ -4,8 +4,7 @@
  */
 import express from 'express';
 import { Gauge, collectDefaultMetrics } from 'prom-client';
-import { validateBrowserSsh } from './server/browserAgent/command.js';
-import { browserKeySession } from './server/browserAgent/session.js';
+import { browserSshIntegration } from './server/browserAgent/integration.js';
 import { getCommand } from './server/command.js';
 import { observeGC } from './server/metrics.js';
 import { server } from './server/socketServer.js';
@@ -52,7 +51,7 @@ export async function decorateServerWithSsh(
   ssl?: SSL,
 ): Promise<SocketIO.Server> {
   const logger = getLogger();
-  if (ssh.auth === 'browser-key') await validateBrowserSsh(ssh);
+  const browserSsh = await browserSshIntegration(ssh);
   if (ssh.key) {
     logger.warn(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Password-less auth enabled using private key from ${ssh.key}.
@@ -64,15 +63,9 @@ export async function decorateServerWithSsh(
   collectDefaultMetrics();
   observeGC();
 
-  const io = await server(
-    app,
-    serverConf,
-    ssl,
-    ssh.auth === 'browser-key' ? ssh.browserOrigin : undefined,
-  );
-  const sessions = new Set<() => Promise<void>>();
-  io.httpServer.on('close', () => {
-    for (const close of sessions) void close();
+  const io = await server(app, serverConf, ssl, browserSsh.origin);
+  const browserSessions = browserSsh.attach(io, command, () => {
+    wettyConnections.dec();
   });
   /**
    * Wetty server connected too
@@ -86,14 +79,7 @@ export async function decorateServerWithSsh(
     logger.info('Connection accepted.');
     wettyConnections.inc();
 
-    if (ssh.auth === 'browser-key') {
-      const close = browserKeySession(socket, ssh, command, () => {
-        sessions.delete(close);
-        wettyConnections.dec();
-      });
-      sessions.add(close);
-      return;
-    }
+    if (browserSessions.handle(socket)) return;
 
     try {
       const args = await getCommand(socket, ssh, command, forcessh);

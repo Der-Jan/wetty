@@ -19,18 +19,16 @@ describe('Public key paste button', function buttonSuite() {
     previousWindow = globalThis.window;
     previousDocument = globalThis.document;
     previousFactory = globalThis.indexedDB;
-    dom = new JSDOM(
-      '<button id="ssh-key-create"><i class="fa-key"></i></button><p id="ssh-key-status"></p>',
-    );
+    dom = new JSDOM('<!doctype html><body></body>');
     globalThis.window = dom.window as unknown as Window & typeof globalThis;
     globalThis.document = dom.window.document;
     globalThis.indexedDB = new IDBFactory();
     sandbox.stub(console, 'table');
     sandbox.stub(console, 'log');
+    setupSshKeyButton();
     const element = document.querySelector('button');
     if (!element) throw new Error('Missing key button');
     button = element;
-    setupSshKeyButton();
   });
   afterEach(() => {
     sandbox.restore();
@@ -75,6 +73,19 @@ describe('Public key paste button', function buttonSuite() {
       button.click();
     });
   }
+  it('should create an accessible control once without template markup', async () => {
+    setupSshKeyButton();
+    expect(document.querySelectorAll('#ssh-key-tools')).to.have.length(1);
+    expect(button.getAttribute('aria-label')).to.equal(
+      'Create / paste SSH public key',
+    );
+    expect(
+      document.getElementById('ssh-key-status')?.getAttribute('aria-live'),
+    ).to.equal('polite');
+    const term = terminal();
+    await click();
+    expect(term.paste.calledOnce).to.equal(true);
+  });
   it('should paste only the public key without Enter and preserve the key icon', async () => {
     const term = terminal();
     const icon = button.querySelector('i');

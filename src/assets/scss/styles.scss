@@ -4,6 +4,7 @@
 @use './overlay';
 @use './options';
 @use './terminal';
+@use './browserSsh';
 
 html,
 body {

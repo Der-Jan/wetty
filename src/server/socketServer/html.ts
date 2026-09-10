@@ -47,14 +47,6 @@ const render = (title: string, base: string): string => `<!doctype html>
        ><i class="fas fa-cogs"></i></a>
       <iframe class="editor" src="${base}/client/xterm_config/index.html"></iframe>
     </div>
-    <div id="ssh-key-tools">
-      <button id="ssh-key-create" type="button"
-              title="Create / paste SSH public key" aria-label="Create / paste SSH public key"
-              aria-describedby="ssh-key-status">
-        <i class="fas fa-key" aria-hidden="true"></i>
-      </button>
-      <p id="ssh-key-status" role="status" aria-live="polite"></p>
-    </div>
     <div id="terminal"></div>
     ${jsFiles
       .map(

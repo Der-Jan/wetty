@@ -3,6 +3,7 @@ import https from 'https';
 import { Server } from 'socket.io';
 
 import { logger } from '../../shared/logger.js';
+import { browserOriginOptions } from '../browserAgent/origin.js';
 import type { SSLBuffer } from '../../shared/interfaces.js';
 import type express from 'express';
 
@@ -38,28 +39,7 @@ export const listen = (
   // Create Socket.IO server
   return new Server(server, {
     path: `${path}/socket.io`,
-    ...(browserOrigin
-      ? {
-          allowRequest: (req, callback) => {
-            // Same-origin polling GETs can omit Origin. Require both browser
-            // fetch metadata and a matching Referer in that case; never let
-            // these headers override an explicitly disallowed Origin.
-            let allowed = req.headers.origin === browserOrigin;
-            if (
-              req.headers.origin === undefined &&
-              req.headers['sec-fetch-site'] === 'same-origin' &&
-              req.headers.referer
-            ) {
-              try {
-                allowed = new URL(req.headers.referer).origin === browserOrigin;
-              } catch {
-                allowed = false;
-              }
-            }
-            callback(null, allowed);
-          },
-        }
-      : {}),
+    ...browserOriginOptions(browserOrigin),
     pingInterval: 3000,
     pingTimeout: 7000,
   });

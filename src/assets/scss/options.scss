@@ -1,35 +1,5 @@
 @use './variables';
 
-// Aligned icon controls in the top-right corner.
-#options > .toggler,
-#functions > .toggler,
-#ssh-key-create {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 32px;
-  height: 32px;
-  padding: 6px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: variables.$lgrey;
-  font-size: 16px;
-  line-height: 1;
-  text-decoration: none;
-  cursor: pointer;
-  transition:
-    color 0.2s ease,
-    background-color 0.2s ease;
-
-  &:hover,
-  &:focus-visible {
-    color: variables.$white;
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-}
-
 // ─── Config Panel ──────────────────────────────────────────────────────────────
 
 #options {
@@ -40,10 +10,24 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   .toggler {
+    color: variables.$lgrey;
+    display: inline-block;
+    font-size: 16px;
     position: absolute;
     right: 0;
     top: 0;
     z-index: 21;
+    padding: 6px;
+    border-radius: 6px;
+    transition:
+      color 0.2s ease,
+      background-color 0.2s ease;
+    text-decoration: none;
+
+    &:hover {
+      color: variables.$white;
+      background-color: rgba(255, 255, 255, 0.1);
+    }
   }
 
   .editor {
@@ -91,6 +75,23 @@
   right: 1em;
   top: 1em;
   z-index: 20;
+
+  > a.toggler {
+    display: inline-block;
+    padding: 6px;
+    border-radius: 6px;
+    color: variables.$lgrey;
+    text-decoration: none;
+    font-size: 16px;
+    transition:
+      color 0.2s ease,
+      background-color 0.2s ease;
+
+    &:hover {
+      color: variables.$white;
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+  }
 
   .onscreen-buttons {
     position: absolute;
@@ -201,76 +202,5 @@
         0 1px 4px rgba(50, 120, 200, 0.4),
         inset 0 1px 0 rgba(255, 255, 255, 0.15);
     }
-  }
-}
-
-// Temporary browser key enrollment, also available above the disconnect overlay.
-#ssh-key-tools {
-  position: fixed;
-  top: 6em;
-  right: 1em;
-  z-index: 101;
-  width: 32px;
-  font-family: system-ui, sans-serif;
-  color: variables.$white;
-
-  button:disabled {
-    opacity: 0.65;
-    cursor: wait;
-  }
-
-  p {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    box-sizing: border-box;
-    width: min(280px, calc(100vw - 2em));
-    margin: 0.5em 0 0;
-    padding: 0.6em;
-    border-radius: 6px;
-    background: rgba(20, 20, 20, 0.95);
-    font-size: 0.85rem;
-    text-align: right;
-    overflow-wrap: anywhere;
-
-    &:empty {
-      display: none;
-    }
-  }
-}
-
-.ssh-host-trust {
-  max-width: min(560px, calc(100vw - 3em));
-  max-height: calc(100vh - 3em);
-  padding: 1.5em;
-  border: 1px solid #777;
-  border-radius: 10px;
-  background: #202020;
-  color: #f5f5f5;
-  font-family: system-ui, sans-serif;
-
-  &::backdrop {
-    background: rgba(0, 0, 0, 0.75);
-  }
-  pre {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  input {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    margin-top: 0.5em;
-  }
-  button,
-  input {
-    padding: 0.6em;
-    font: inherit;
-  }
-  .ssh-host-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75em;
-    margin-top: 1.5em;
   }
 }
