@@ -62,7 +62,6 @@ export function browserSshCommand(
     'PubkeyAuthentication=unbound',
     'PasswordAuthentication=yes',
     'KbdInteractiveAuthentication=yes',
-    'GSSAPIAuthentication=no',
     'HostbasedAuthentication=no',
     'PubkeyAcceptedAlgorithms=rsa-sha2-256',
     'IdentityFile=none',
