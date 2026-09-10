@@ -62,3 +62,13 @@ the `--allow-remote-command` flag.
 
 You can set the log level of the WeTTY server using the `--log-level` flag.
 Accepts standard log levels (e.g. `debug`, `http`, `info`, `warn`, `error`).
+
+## Browser-generated SSH key login
+
+Use `--ssh-auth browser-key` with a fixed `--ssh-user`, `--ssh-host`,
+`--ssh-port`, `--known-hosts browser` (or an absolute trusted file), and an
+exact `--browser-origin`. Browser mode prompts for first-use host-key approval
+and stores trusted keys in IndexedDB. Changed keys require explicit review. This
+tries the browser's IndexedDB key first, then allows interactive password
+fallback. See [browser key login](browser-key-login.md) for configuration and
+enrollment.

@@ -53,7 +53,12 @@ const yargsInstance = yargs(hideBin(process.argv))
   })
   .option('ssh-auth', {
     description:
-      'defaults to "password", you can use "publickey,password" instead',
+      'defaults to "password"; use "browser-key" for the IndexedDB key, or "publickey,password" for system keys',
+    type: 'string',
+  })
+  .option('browser-origin', {
+    description:
+      'Exact browser origin for browser-key authentication (e.g. https://terminal.example.com)',
     type: 'string',
   })
   .option('ssh-pass', {
@@ -76,7 +81,8 @@ const yargsInstance = yargs(hideBin(process.argv))
     type: 'boolean',
   })
   .option('known-hosts', {
-    description: 'path to known hosts file',
+    description:
+      'path to known hosts file, or browser for browser-key authentication',
     type: 'string',
   })
   .option('base', {
@@ -140,12 +146,8 @@ function cleanup() {
     }
   }
 }
-function exit() {
-  process.exit(1);
-}
 
 if (!opts.help) {
-  process.on('SIGINT', exit);
   process.on('exit', cleanup);
   void loadConfigFile(opts.conf)
     .then((config) => mergeCliConf(opts, config))
@@ -158,6 +160,15 @@ if (!opts.help) {
         conf.forceSSH,
         conf.ssl,
       );
+    })
+    .then((io) => {
+      const shutdown = (): void => {
+        const deadline = setTimeout(() => process.exit(1), 5000);
+        deadline.unref();
+        void io.close();
+      };
+      process.once('SIGINT', shutdown);
+      process.once('SIGTERM', shutdown);
     })
     .catch((err: unknown) => {
       logger().error('error in server', { err });

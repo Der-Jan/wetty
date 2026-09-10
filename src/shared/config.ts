@@ -138,6 +138,7 @@ export function mergeCliConf(opts: Arguments, config: Config): Config {
       user: opts['ssh-user'],
       host: opts['ssh-host'],
       auth: opts['ssh-auth'],
+      browserOrigin: opts['browser-origin'],
       port: opts['ssh-port'],
       pass: opts['ssh-pass'],
       key: opts['ssh-key'],

@@ -2,6 +2,9 @@
   ssh: {
     // user:    'username',                     // default user to use when ssh-ing
     host:       'localhost',                    // Server to ssh to
+    // Set auth to 'browser-key' to use the key created in this browser.
+    // Requires a fixed user and a real knownHosts file; see docs/browser-key-login.md.
+    // browserOrigin: 'https://terminal.example.com', // exact browser origin, no trailing slash
     auth:       'password',                     // ssh authentication method. Defaults to "password", you can use "publickey,password" instead'
     // pass:    "password",                     // Password to use when sshing
     // key:     "",                             // path to an optional client private key, connection will be password-less and insecure!

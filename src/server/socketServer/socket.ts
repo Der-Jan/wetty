@@ -13,6 +13,7 @@ export const listen = (
   path: string,
   { key, cert }: SSLBuffer,
   socket?: string | boolean,
+  browserOrigin?: string,
 ): Server => {
   // Create the base HTTP/HTTPS server
   const server =
@@ -37,6 +38,28 @@ export const listen = (
   // Create Socket.IO server
   return new Server(server, {
     path: `${path}/socket.io`,
+    ...(browserOrigin
+      ? {
+          allowRequest: (req, callback) => {
+            // Same-origin polling GETs can omit Origin. Require both browser
+            // fetch metadata and a matching Referer in that case; never let
+            // these headers override an explicitly disallowed Origin.
+            let allowed = req.headers.origin === browserOrigin;
+            if (
+              req.headers.origin === undefined &&
+              req.headers['sec-fetch-site'] === 'same-origin' &&
+              req.headers.referer
+            ) {
+              try {
+                allowed = new URL(req.headers.referer).origin === browserOrigin;
+              } catch {
+                allowed = false;
+              }
+            }
+            callback(null, allowed);
+          },
+        }
+      : {}),
     pingInterval: 3000,
     pingTimeout: 7000,
   });

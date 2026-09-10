@@ -21,7 +21,8 @@
     "lint:fix": "eslint --fix src",
     "start": "NODE_ENV=production node ./build/main.js",
     "test": "mocha",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:browser-key": "mocha --no-config --node-option import=tsx --timeout 30000 test/integration/browser-key.spec.ts"
   },
   "publishConfig": {
     "provenance": true,
@@ -104,6 +105,7 @@
     "eslint-plugin-import-x": "^4.16.2",
     "eslint-plugin-mocha": "^12.0.1",
     "eslint-plugin-prettier": "^5.5.5",
+    "fake-indexeddb": "^6.2.5",
     "git-authors-cli": "^1.0.53",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
@@ -162,7 +164,7 @@
     "Kevin <kevin@vnucleus.com>",
     "Farhan Khan <khanzf@gmail.com>",
     "Kasper Holbek Jensen <kholbekj@gmail.com>",
-    "Krzysztof Suszyński <krzysztof.suszynski@wavesoftware.pl>",
+    "Krzysztof Suszy\u0144ski <krzysztof.suszynski@wavesoftware.pl>",
     "justluk <lukegriffith@gmail.com>",
     "Mathieu Geli <mathieu.geli@gmail.com>",
     "Mihir Kumar <mihirpandey.13@gmail.com>",

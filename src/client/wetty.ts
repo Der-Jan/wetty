@@ -3,6 +3,10 @@ import { faCogs, faKeyboard } from '@fortawesome/free-solid-svg-icons';
 
 import '../assets/scss/styles.scss';
 
+import { setupSshKeyButton } from './wetty/auth/button';
+import { setupBrowserHostTrust } from './wetty/auth/hostSession';
+import { setupBrowserSigner } from './wetty/auth/session';
+
 import { disconnect } from './wetty/disconnect';
 import { overlay } from './wetty/disconnect/elements';
 import { verifyPrompt } from './wetty/disconnect/verify';
@@ -23,6 +27,10 @@ if ('serviceWorker' in navigator) {
   }
 }
 
+setupSshKeyButton();
+setupBrowserSigner(socket);
+setupBrowserHostTrust(socket);
+
 // Setup for fontawesome
 library.add(faCogs);
 library.add(faKeyboard);
@@ -40,7 +48,8 @@ socket.on('connect', () => {
 
   if (overlay !== null) overlay.style.display = 'none';
   window.addEventListener('beforeunload', verifyPrompt, false);
-  window.addEventListener('resize', onResize(term), false);
+  const resizeWindow = onResize(term);
+  window.addEventListener('resize', resizeWindow, false);
 
   term.resizeTerm();
   term.focus();
@@ -80,4 +89,22 @@ socket.on('connect', () => {
     .on('error', (err: string | null) => {
       if (err) disconnect(err);
     });
+  socket.once('disconnect', () => {
+    window.removeEventListener('resize', resizeWindow, false);
+    window.onresize = null;
+    term.dispose();
+    window.wetty_term = undefined;
+    socket
+      .off('data')
+      .off('login')
+      .off('logout', disconnect)
+      .off('disconnect', disconnect)
+      .off('error');
+  });
+  socket.emit('browser-key:hello');
 });
+
+socket.on('connect_error', (error: Error) => {
+  disconnect(error.message);
+});
+socket.connect();

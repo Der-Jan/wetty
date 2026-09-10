@@ -10,26 +10,28 @@ export function tinybuffer(socket: Socket, timeout: number, maxSize: number) {
   const s: string[] = [];
   let length = 0;
   let sender: NodeJS.Timeout | null = null;
-  return (data: string) => {
+  let disposed = false;
+  const flush = (): void => {
+    if (sender) clearTimeout(sender);
+    sender = null;
+    if (!disposed && length > 0) socket.emit('data', s.join(''));
+    s.length = 0;
+    length = 0;
+  };
+  const send = (data: string): void => {
+    if (disposed) return;
     s.push(data);
     length += data.length;
-    if (length > maxSize) {
-      socket.emit('data', s.join(''));
-      s.length = 0;
-      length = 0;
-      if (sender) {
-        clearTimeout(sender);
-        sender = null;
-      }
-    } else {
-      sender ??= setTimeout(() => {
-        socket.emit('data', s.join(''));
-        s.length = 0;
-        length = 0;
-        sender = null;
-      }, timeout);
-    }
+    if (length > maxSize) flush();
+    else sender ??= setTimeout(flush, timeout);
   };
+  return Object.assign(send, {
+    flush,
+    dispose: (): void => {
+      disposed = true;
+      flush();
+    },
+  });
 }
 
 /**
