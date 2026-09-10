@@ -2,7 +2,7 @@ import { Socket } from 'socket.io';
 
 /**
  * tinybuffer to lower message pressure on the websocket.
- * Incoming data from PTY will be held back at most for `timeout` microseconds.
+ * Incoming data from PTY will be held back at most for `timeout` milliseconds.
  * If the accumulated data exceeds `maxSize` the message will be sent
  * immediately.
  */
@@ -11,25 +11,42 @@ export function tinybuffer(socket: Socket, timeout: number, maxSize: number) {
   let length = 0;
   let sender: NodeJS.Timeout | null = null;
   let disposed = false;
-  const flush = (): void => {
-    if (sender) clearTimeout(sender);
-    sender = null;
-    if (!disposed && length > 0) socket.emit('data', s.join(''));
-    s.length = 0;
-    length = 0;
-  };
   const send = (data: string): void => {
     if (disposed) return;
     s.push(data);
     length += data.length;
-    if (length > maxSize) flush();
-    else sender ??= setTimeout(flush, timeout);
+    if (length > maxSize) {
+      socket.emit('data', s.join(''));
+      s.length = 0;
+      length = 0;
+      if (sender) {
+        clearTimeout(sender);
+        sender = null;
+      }
+    } else {
+      sender ??= setTimeout(() => {
+        socket.emit('data', s.join(''));
+        s.length = 0;
+        length = 0;
+        sender = null;
+      }, timeout);
+    }
   };
   return Object.assign(send, {
-    flush,
+    flush: (): void => {
+      if (sender) clearTimeout(sender);
+      sender = null;
+      const data = s.join('');
+      s.length = 0;
+      length = 0;
+      if (!disposed && data.length > 0) socket.emit('data', data);
+    },
     dispose: (): void => {
       disposed = true;
-      flush();
+      if (sender) clearTimeout(sender);
+      sender = null;
+      s.length = 0;
+      length = 0;
     },
   });
 }

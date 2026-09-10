@@ -22,7 +22,8 @@
     "start": "NODE_ENV=production node ./build/main.js",
     "test": "mocha",
     "prepare": "husky",
-    "test:browser-key": "mocha --no-config --node-option import=tsx --timeout 30000 test/integration/browser-key.spec.ts"
+    "test:browser-key": "mocha --no-config --node-option import=tsx --timeout 30000 test/integration/browser-key.spec.ts",
+    "test:pty": "mocha --no-config --node-option import=tsx --timeout 30000 test/integration/pty.spec.ts"
   },
   "publishConfig": {
     "provenance": true,
