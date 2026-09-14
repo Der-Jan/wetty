@@ -30,6 +30,7 @@ export async function server(
   const client = html(basePath, title);
   app
     .disable('x-powered-by')
+    .use(policies(allowIframe))
     .use(metricMiddleware(basePath))
     .use(`${basePath}/metrics`, metricRoute)
     .use(`${basePath}/client`, serveStatic('client'))
@@ -46,7 +47,6 @@ export async function server(
     .use(compression())
     .use(await favicon(basePath))
     .use(redirect)
-    .use(policies(allowIframe))
     .get(basePath, client)
     .get(`${basePath}/ssh/:user`, client);
 

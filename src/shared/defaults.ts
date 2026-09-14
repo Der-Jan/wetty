@@ -6,6 +6,7 @@ export const sshDefault: SSH = {
   host: process.env.SSHHOST ?? 'localhost',
   auth: process.env.SSHAUTH ?? 'password',
   browserOrigin: process.env.BROWSER_ORIGIN,
+  browserAgentForwarding: process.env.BROWSER_AGENT_FORWARDING === 'true',
   pass: process.env.SSHPASS ?? undefined,
   key: process.env.SSHKEY ?? undefined,
   port: parseInt(process.env.SSHPORT ?? '22', 10),

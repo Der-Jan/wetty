@@ -15,9 +15,10 @@ import { loadSshKey } from '../../src/client/wetty/auth/keys';
 import { setupBrowserSigner } from '../../src/client/wetty/auth/session';
 import { validateBrowserSsh } from '../../src/server/browserAgent/command';
 import { browserSshIntegration } from '../../src/server/browserAgent/integration';
-import { BROWSER_KEY_SCOPE } from '../../src/shared/browserAgent';
+import { BROWSER_KEY_SCOPE, fields } from '../../src/shared/browserAgent';
 import { sshDefault } from '../../src/shared/defaults';
 import type { HostApproval } from '../../src/client/wetty/auth/hostTrust';
+import type { ImportApproval } from '../../src/client/wetty/auth/keyringSession';
 import type { SSH } from '../../src/shared/interfaces';
 import type { ChildProcess } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
@@ -130,6 +131,13 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     stopAtPassword = false,
     approve: HostApproval = () => true,
     dropOnHost = false,
+    approveSign: (
+      user: string,
+      signal: AbortSignal,
+    ) => boolean | Promise<boolean> = () => false,
+    legacyBrowser = false,
+    approveImport?: ImportApproval,
+    pollingOnly = false,
   ): Promise<{ output: string; signs: number }> {
     const http = createServer();
     const server = new Server(http);
@@ -146,7 +154,12 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     await once(http, 'listening');
     const client = connect(
       `http://127.0.0.1:${String((http.address() as AddressInfo).port)}`,
-      { autoConnect: false },
+      {
+        autoConnect: false,
+        transports: approveImport
+          ? [pollingOnly ? 'polling' : 'websocket']
+          : undefined,
+      },
     );
     let output = '';
     let signs = 0;
@@ -158,7 +171,12 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
       signs += 1;
       if (dropOnSign) client.disconnect();
     });
-    setupBrowserSigner(client);
+    setupBrowserSigner(client, approveSign, approveImport);
+    if (legacyBrowser) {
+      client.onAnyOutgoing((event: string, payload: unknown) => {
+        if (event === 'browser-key:result') delete fields(payload).forwarding;
+      });
+    }
     setupBrowserHostTrust(client, (...args) => {
       const result = approve(...args);
       if (dropOnHost) client.disconnect();
@@ -191,6 +209,230 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     const result = await login('printf BROWSER_KEY_OK');
     assert.match(result.output, /BROWSER_KEY_OK/);
     assert.ok(result.signs >= 1, logs);
+  });
+
+  it('does not forward an agent by default', async () => {
+    const result = await login(
+      'test -z "$SSH_AUTH_SOCK" && printf NO_FORWARDED_AGENT',
+    );
+    assert.match(result.output, /NO_FORWARDED_AGENT/);
+  });
+
+  it('does not forward to an older browser without explicit approval capability', async () => {
+    const result = await login(
+      'test -z "$SSH_AUTH_SOCK" && printf NO_FORWARDED_AGENT',
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      () => {
+        throw new Error('Must not request approval');
+      },
+      true,
+    );
+    assert.match(result.output, /NO_FORWARDED_AGENT/);
+  });
+
+  it('lists the browser identity through the forwarded agent', async () => {
+    const result = await login('ssh-add -L', {
+      ...ssh,
+      browserAgentForwarding: true,
+    });
+    assert.ok(result.output.includes(publicKey));
+  });
+
+  function onwardCommand(): string {
+    return `/usr/bin/ssh -F /dev/null -o BatchMode=yes -o PubkeyAuthentication=unbound -o PubkeyAcceptedAlgorithms=rsa-sha2-256 -o IdentityFile=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${join(directory, 'known_hosts')} -o GlobalKnownHostsFile=/dev/null -p ${String(ssh.port)} -l ${ssh.user} 127.0.0.1 printf FORWARDED_LOGIN_OK`;
+  }
+
+  it('requires approval even for an onward login using the initial username', async () => {
+    let approvals = 0;
+    const result = await login(
+      onwardCommand(),
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      (user) => {
+        assert.equal(user, ssh.user);
+        approvals += 1;
+        return true;
+      },
+    );
+    assert.match(result.output, /FORWARDED_LOGIN_OK/);
+    assert.equal(approvals, 1);
+    assert.equal(result.signs, 2);
+  });
+
+  it('denies onward login when browser approval is refused', async () => {
+    let approvals = 0;
+    const result = await login(
+      onwardCommand(),
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      () => {
+        approvals += 1;
+        return false;
+      },
+    );
+    assert.doesNotMatch(result.output, /FORWARDED_LOGIN_OK/);
+    assert.equal(approvals, 1);
+    assert.match(result.output, /Permission denied|signing failed/);
+  });
+
+  describe('ssh-add imported identities', () => {
+    beforeEach(async () => {
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase('wetty-imported-ssh-keys');
+        request.onsuccess = () => {
+          resolve();
+        };
+        request.onerror = () => {
+          reject(new Error('Cannot reset imported keys'));
+        };
+      });
+    });
+    function importFile(type: 'rsa' | 'ed25519'): string {
+      const path = join(directory, `import-${type}`);
+      return path;
+    }
+    before(() => {
+      for (const type of ['rsa', 'ed25519'] as const) {
+        execFileSync('/usr/bin/ssh-keygen', [
+          '-q',
+          '-t',
+          type,
+          ...(type === 'rsa' ? ['-b', '2048'] : []),
+          '-N',
+          '',
+          '-f',
+          importFile(type),
+        ]);
+      }
+    });
+    (['rsa', 'ed25519'] as const).forEach((type) => {
+      it(`imports ${type} with real ssh-add, persists it and uses it for onward login`, async () => {
+        let imports = 0;
+        const path = importFile(type);
+        const importedPublic = (await readFile(`${path}.pub`, 'utf8')).trim();
+        const result = await login(
+          `/usr/bin/ssh-add ${path} && /usr/bin/ssh-add -L`,
+          { ...ssh, browserAgentForwarding: true },
+          false,
+          false,
+          () => true,
+          false,
+          () => true,
+          false,
+          () => {
+            imports += 1;
+            return true;
+          },
+        );
+        assert.equal(imports, 1);
+        assert.ok(
+          result.output.includes(
+            importedPublic.split(' ').slice(0, 2).join(' '),
+          ),
+        );
+        const reconnect = await login('/usr/bin/ssh-add -L', {
+          ...ssh,
+          browserAgentForwarding: true,
+        });
+        assert.ok(
+          reconnect.output.includes(
+            importedPublic.split(' ').slice(0, 2).join(' '),
+          ),
+        );
+        await writeFile(
+          join(directory, 'authorized_keys'),
+          `${publicKey}\n${importedPublic}\n`,
+        );
+        try {
+          let signs = 0;
+          const onward = `/usr/bin/ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile=${path}.pub -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${join(directory, 'known_hosts')} -p ${String(ssh.port)} -l ${ssh.user} 127.0.0.1 printf IMPORTED_LOGIN_OK`;
+          const signed = await login(
+            onward,
+            { ...ssh, browserAgentForwarding: true },
+            false,
+            false,
+            () => true,
+            false,
+            () => {
+              signs += 1;
+              return true;
+            },
+          );
+          assert.match(signed.output, /IMPORTED_LOGIN_OK/);
+          assert.equal(signs, 1);
+          const denied = await login(onward, {
+            ...ssh,
+            browserAgentForwarding: true,
+          });
+          assert.doesNotMatch(denied.output, /IMPORTED_LOGIN_OK/);
+        } finally {
+          await writeFile(join(directory, 'authorized_keys'), `${publicKey}\n`);
+        }
+      });
+    });
+    it('rejects a declined import and leaves the identity list unchanged', async () => {
+      let imports = 0;
+      const result = await login(
+        `/usr/bin/ssh-add ${importFile('ed25519')}; /usr/bin/ssh-add -L`,
+        { ...ssh, browserAgentForwarding: true },
+        false,
+        false,
+        () => true,
+        false,
+        () => true,
+        false,
+        () => {
+          imports += 1;
+          return false;
+        },
+      );
+      assert.equal(imports, 1);
+      assert.match(result.output, /agent refused operation/);
+      assert.equal(result.output.split('ssh-ed25519 ').length, 1);
+    });
+    it('rejects constrained imports without prompting', async () => {
+      const result = await login(
+        `/usr/bin/ssh-add -t 60 ${importFile('ed25519')}`,
+        { ...ssh, browserAgentForwarding: true },
+        false,
+        false,
+        () => true,
+        false,
+        () => true,
+        false,
+        () => {
+          throw new Error('Must not prompt');
+        },
+      );
+      assert.match(result.output, /agent refused operation/);
+    });
+    it('refuses private-key transport over HTTP polling', async () => {
+      const result = await login(
+        `/usr/bin/ssh-add ${importFile('ed25519')}`,
+        { ...ssh, browserAgentForwarding: true },
+        false,
+        false,
+        () => true,
+        false,
+        () => true,
+        false,
+        () => {
+          throw new Error('Must not receive private import');
+        },
+        true,
+      );
+      assert.match(result.output, /agent refused operation/);
+    });
   });
 
   it('offers a password prompt when the browser key is not enrolled', async () => {

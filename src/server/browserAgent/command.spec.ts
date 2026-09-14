@@ -29,6 +29,31 @@ describe('Browser key SSH command policy', () => {
     expect(args).to.include('fixed');
   });
 
+  it('should forward only the separate socket when explicitly enabled', () => {
+    expect(
+      browserSshCommand(
+        { ...sshDefault, browserAgentForwarding: true },
+        'login',
+        undefined,
+        '/tmp/forward-agent',
+      ),
+    ).to.include('ForwardAgent=/tmp/forward-agent');
+    expect(
+      browserSshCommand(
+        { ...sshDefault, browserAgentForwarding: false },
+        'login',
+        undefined,
+        '/tmp/forward-agent',
+      ),
+    ).to.include('ForwardAgent=no');
+    expect(
+      browserSshCommand(
+        { ...sshDefault, browserAgentForwarding: true },
+        'login',
+      ),
+    ).to.include('ForwardAgent=no');
+  });
+
   it('should require a fixed user and known-hosts file', async () => {
     const results = await Promise.allSettled([
       validateBrowserSsh(sshDefault),

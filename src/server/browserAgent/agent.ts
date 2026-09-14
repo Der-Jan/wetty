@@ -10,6 +10,7 @@ import {
   equalBytes,
   sshString,
 } from '../../shared/browserAgent.js';
+import { checkForwardedAuth } from '../../shared/forwardedAuth.js';
 import { logger } from '../../shared/logger.js';
 import type { Socket } from 'node:net';
 
@@ -21,9 +22,13 @@ export interface BrowserAgent {
 /** The only private operation is delegated to the session's browser signer. */
 export async function createBrowserAgent(
   blob: Uint8Array,
-  user: string,
+  user: string | undefined,
   sign: (data: Uint8Array) => Promise<Uint8Array>,
+  handleForwarded?: (packet: Uint8Array) => Promise<Uint8Array>,
 ): Promise<BrowserAgent> {
+  if (handleForwarded && user !== undefined) {
+    throw new Error('Key management is forwarding-only');
+  }
   const reader = new Reader(blob);
   if (reader.text() !== 'ssh-rsa') throw new Error('Expected RSA public key');
   const e = reader.string();
@@ -49,7 +54,9 @@ export async function createBrowserAgent(
       return;
     }
     clients.add(client);
-    client.setTimeout(15000, () => client.destroy());
+    client.setTimeout(user === undefined ? 65000 : 15000, () =>
+      client.destroy(),
+    );
     client.on('error', () => client.destroy());
     client.once('close', () => clients.delete(client));
     let buffer = Buffer.alloc(0);
@@ -61,7 +68,9 @@ export async function createBrowserAgent(
         let reply: Uint8Array = new Uint8Array([5]);
         const request = new Reader(packet);
         const type = request.byte();
-        if (type === 11) {
+        if (handleForwarded) {
+          reply = await handleForwarded(packet);
+        } else if (type === 11) {
           request.end();
           reply = new Uint8Array([
             12,
@@ -78,7 +87,8 @@ export async function createBrowserAgent(
           const flags = request.uint32();
           request.end();
           if (flags === 2 && equalBytes(requestedKey, blob)) {
-            checkUserAuth(data, user, blob);
+            if (user === undefined) checkForwardedAuth(data, blob);
+            else checkUserAuth(data, user, blob);
             const signature = await sign(data);
             if (
               signature.length !== 384 ||
@@ -106,6 +116,7 @@ export async function createBrowserAgent(
           client.write(sshString(new Uint8Array([5])));
         }
       } finally {
+        if (packet[0] === 17 || packet[0] === 25) packet.fill(0);
         pending -= 1;
       }
     };

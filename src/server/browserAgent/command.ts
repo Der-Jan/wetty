@@ -52,6 +52,7 @@ export function browserSshCommand(
   ssh: SSH,
   command: string,
   knownHostsCommand?: string,
+  forwardingSocket?: string,
 ): string[] {
   if (ssh.knownHosts === 'browser' && !knownHostsCommand) {
     throw new Error('Browser host verification helper required');
@@ -67,7 +68,7 @@ export function browserSshCommand(
     'IdentityFile=none',
     'CertificateFile=none',
     'IdentitiesOnly=no',
-    'ForwardAgent=no',
+    `ForwardAgent=${ssh.browserAgentForwarding === true && forwardingSocket ? forwardingSocket : 'no'}`,
     'ForwardX11=no',
     'ClearAllForwardings=yes',
     'ControlMaster=no',

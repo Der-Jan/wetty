@@ -19,24 +19,24 @@ const render = (title: string, base: string): string => `<!doctype html>
     <div id="overlay">
       <div class="error">
         <div id="msg"></div>
-        <input type="button" onclick="location.reload();" value="reconnect" />
+        <input type="button" data-wetty-action="reconnect" value="reconnect" />
       </div>
     </div>
     <div id="functions">
       <a class="toggler"
          href="#"
          alt="Toggle keyboard"
-         onclick="window.toggleFunctions()"
+         data-wetty-action="toggleFunctions"
        ><i class="fas fa-keyboard"></i></a>
       <div class="onscreen-buttons">
-        <a href="#" onclick="window.pressESC()"><div>Esc</div></a>
-        <a href="#" onclick="window.pressTAB()"><div>Tab</div></a>
-        <a id="onscreen-ctrl" href="#" onclick="window.toggleCTRL()"><div>Ctrl</div></a>
-        <a href="#" onclick="window.pressLEFT()"><div>&#9664;</div></a>
-        <a href="#" onclick="window.pressUP()"><div>&#9650;</div></a>
-        <a href="#" onclick="window.pressRIGHT()"><div>&#9654;</div></a>
+        <a href="#" data-wetty-action="pressESC"><div>Esc</div></a>
+        <a href="#" data-wetty-action="pressTAB"><div>Tab</div></a>
+        <a id="onscreen-ctrl" href="#" data-wetty-action="toggleCTRL"><div>Ctrl</div></a>
+        <a href="#" data-wetty-action="pressLEFT"><div>&#9664;</div></a>
+        <a href="#" data-wetty-action="pressUP"><div>&#9650;</div></a>
+        <a href="#" data-wetty-action="pressRIGHT"><div>&#9654;</div></a>
         <a href="#" style="visibility:hidden"><div></div></a>
-        <a href="#" onclick="window.pressDOWN()"><div>&#9660;</div></a>
+        <a href="#" data-wetty-action="pressDOWN"><div>&#9660;</div></a>
         <a href="#" style="visibility:hidden"><div></div></a>
       </div>
     </div>

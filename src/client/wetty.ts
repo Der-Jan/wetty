@@ -5,6 +5,8 @@ import '../assets/scss/styles.scss';
 
 import { setupBrowserSsh } from './wetty/auth/bootstrap';
 
+import { setupControls } from './wetty/controls';
+
 import { disconnect } from './wetty/disconnect';
 import { overlay } from './wetty/disconnect/elements';
 import { verifyPrompt } from './wetty/disconnect/verify';
@@ -100,5 +102,6 @@ socket.on('connect', () => {
 socket.on('connect_error', (error: Error) => {
   disconnect(error.message);
 });
+setupControls(document, window);
 setupBrowserSsh(socket);
 socket.connect();

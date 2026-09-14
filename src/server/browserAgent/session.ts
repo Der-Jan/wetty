@@ -9,6 +9,7 @@ import { logger } from '../../shared/logger.js';
 import { spawn } from '../spawn.js';
 import { createBrowserAgent } from './agent.js';
 import { browserSshCommand, browserSshEnv } from './command.js';
+import { forwardedKeys } from './forwardedKeys.js';
 import { createBrowserKnownHosts } from './knownHosts.js';
 import type { BrowserAgent } from './agent.js';
 import type { BrowserKnownHosts } from './knownHosts.js';
@@ -74,6 +75,7 @@ export function browserKeySession(
   const { signal } = controller;
   const sessionId = randomUUID();
   let agent: BrowserAgent | undefined;
+  let forwardingAgent: BrowserAgent | undefined;
   let knownHosts: BrowserKnownHosts | undefined;
   let closing: Promise<void> | undefined;
   let signingRequests = 0;
@@ -86,7 +88,11 @@ export function browserKeySession(
       socket.off('disconnect', disconnected);
       socket.disconnect(true);
       onClose();
-      await Promise.all([agent?.close(), knownHosts?.close()]);
+      await Promise.all([
+        agent?.close(),
+        forwardingAgent?.close(),
+        knownHosts?.close(),
+      ]);
     })().catch((error: unknown) => {
       logger().error('Browser key cleanup failed', { err: error });
     });
@@ -137,6 +143,9 @@ export function browserKeySession(
       knownHosts = created;
     }
     let blob: Uint8Array;
+    let supportsForwarding = false;
+    let supportsKeyManagement = false;
+    let managedRequests = 0;
     try {
       const response = fields(
         await requestBrowser(
@@ -146,6 +155,7 @@ export function browserKeySession(
             v: 1,
             sessionId,
             target: { user: ssh.user, host: ssh.host, port: ssh.port },
+            forwarding: ssh.browserAgentForwarding === true,
           },
           signal,
           60000,
@@ -156,6 +166,9 @@ export function browserKeySession(
         throw new Error('Invalid browser key preparation response');
       }
       blob = publicBlob(response.publicKey);
+      supportsKeyManagement = response.keyManagement === 1;
+      supportsForwarding =
+        ssh.browserAgentForwarding === true && response.forwarding === true;
     } catch (error) {
       if (signal.aborted) return;
       logger().info(
@@ -179,7 +192,10 @@ export function browserKeySession(
       );
       return;
     }
-    const created = await createBrowserAgent(blob, ssh.user, async (data) => {
+    const sign = async (
+      data: Uint8Array,
+      forwarded = false,
+    ): Promise<Uint8Array> => {
       signingRequests += 1;
       if (signingRequests > 32) throw new Error('Too many signing requests');
       const requestId = randomUUID();
@@ -192,10 +208,11 @@ export function browserKeySession(
             sessionId,
             requestId,
             algorithm: 'rsa-sha2-256',
+            forwarded,
             data,
           },
           signal,
-          SIGN_TIMEOUT,
+          forwarded ? 60000 : SIGN_TIMEOUT,
         ),
       );
       signal.throwIfAborted();
@@ -207,17 +224,77 @@ export function browserKeySession(
         throw new Error('Invalid browser signing response');
       }
       return bytes(result.signature, 384);
-    });
+    };
+    const created = await createBrowserAgent(blob, ssh.user, sign);
     if (signal.aborted) {
       await created.close();
       return;
     }
     agent = created;
-    await spawn(socket, browserSshCommand(ssh, command, knownHosts?.command), {
-      env: browserSshEnv(agent.path),
-      signal,
-      onExit: disconnected,
-    });
+    if (supportsForwarding) {
+      const managed = supportsKeyManagement
+        ? forwardedKeys(
+            blob,
+            (data) => sign(data, true),
+            async (operation, payload) => {
+              signal.throwIfAborted();
+              managedRequests += 1;
+              if (managedRequests > 128) {
+                throw new Error('Too many key management requests');
+              }
+              // Private imports must never travel in cacheable HTTP polling responses.
+              if (
+                operation === 'add' &&
+                (!socket.connected ||
+                  socket.conn.transport.name !== 'websocket')
+              ) {
+                throw new Error('Key imports require an active WebSocket');
+              }
+              const result = fields(
+                await requestBrowser(
+                  socket,
+                  'browser-key:manage',
+                  { v: 1, sessionId, operation, ...payload },
+                  signal,
+                  operation === 'list' ? SIGN_TIMEOUT : 60000,
+                ),
+              );
+              signal.throwIfAborted();
+              if (result.v !== 1 || result.error) {
+                throw new Error('Browser key operation failed');
+              }
+              return result;
+            },
+          )
+        : undefined;
+      const forwarded = await createBrowserAgent(
+        blob,
+        undefined,
+        (data) => sign(data, true),
+        managed,
+      );
+      try {
+        signal.throwIfAborted();
+      } catch {
+        await forwarded.close();
+        return;
+      }
+      forwardingAgent = forwarded;
+    }
+    await spawn(
+      socket,
+      browserSshCommand(
+        ssh,
+        command,
+        knownHosts?.command,
+        forwardingAgent?.path,
+      ),
+      {
+        env: browserSshEnv(agent.path),
+        signal,
+        onExit: disconnected,
+      },
+    );
     signal.throwIfAborted();
     clearTimeout(setupTimer);
   }

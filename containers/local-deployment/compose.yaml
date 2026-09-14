@@ -1,0 +1,53 @@
+# Sample docker compose file to demonstrate the usage of wetty behind a reverse
+# proxy, optionally with Let's Encrypt based SSL certificate
+#
+# For SSL support, uncomment the commented lines. Consult traefik documentation
+# for features like automatic forward from HTTP to HTTPS etc.
+
+services:
+  wetty:
+    image: wetty.hardened.local
+    build:
+      context: .
+      dockerfile: Dockerfile.runtime
+    user: "1000:1000"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    cpus: 1.0
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command:
+      - --base=/
+      - --ssh-host=172.16.0.11
+      - --ssh-user=riechers
+      - --browser-origin=https://wetty.jans.space
+      - --ssh-auth=browser-key
+      - --browser-agent-forwarding
+      - --known-hosts=browser
+      - >-
+        --command=if [ -n "$${SSH_AUTH_SOCK}" ]; then ln -sfn -- "$${SSH_AUTH_SOCK}" "$${HOME}/.ssh/agent.sock" && export SSH_AUTH_SOCK="$${HOME}/.ssh/agent.sock"; fi; if command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null; then tmux attach-session && exit 0; fi; exec "$${SHELL:-/bin/sh}" -l
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wetty.rule=Host(`wetty.jans.space`)
+      - traefik.http.routers.wetty.tls.options=vault-mtls@file
+
+    networks:
+      public20:
+
+
+networks:
+  public20:
+    external: true

@@ -9,8 +9,11 @@ export const policies =
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-          scriptSrcAttr: ["'unsafe-inline'"],
+          // The xterm image decoder uses WebAssembly, but needs no JS eval.
+          scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
+          scriptSrcAttr: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'none'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           fontSrc: ["'self'", 'data:'],
           connectSrc: [

@@ -56,6 +56,11 @@ const yargsInstance = yargs(hideBin(process.argv))
       'defaults to "password"; use "browser-key" for the IndexedDB key, or "publickey,password" for system keys',
     type: 'string',
   })
+  .option('browser-agent-forwarding', {
+    description:
+      'Forward the browser agent; each onward signature requires browser approval',
+    type: 'boolean',
+  })
   .option('browser-origin', {
     description:
       'Exact browser origin for browser-key authentication (e.g. https://terminal.example.com)',

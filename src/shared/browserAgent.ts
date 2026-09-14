@@ -111,24 +111,30 @@ export function publicBlob(line: unknown): Uint8Array<ArrayBuffer> {
 /** Permit only an ordinary SSH public-key login for this user and key. */
 export function checkUserAuth(
   data: Uint8Array,
-  user: string,
+  user: string | undefined,
   key: Uint8Array,
-): void {
+  algorithm = 'rsa-sha2-256',
+): string {
   if (data.length > 32768) throw new Error('SSH signing payload exceeds limit');
   const reader = new Reader(data);
   const exchange = reader.string();
+  const message = reader.byte();
+  const requestedUser = reader.text();
   if (
     exchange.length < 16 ||
     exchange.length > 128 ||
-    reader.byte() !== 50 ||
-    reader.text() !== user ||
+    message !== 50 ||
+    !/^[A-Za-z0-9_][A-Za-z0-9_.@-]*[$]?$/.test(requestedUser) ||
+    requestedUser.length > 256 ||
+    (user !== undefined && requestedUser !== user) ||
     reader.text() !== 'ssh-connection' ||
     reader.text() !== 'publickey' ||
     reader.byte() !== 1 ||
-    reader.text() !== 'rsa-sha2-256' ||
+    reader.text() !== algorithm ||
     !equalBytes(reader.string(), key)
   ) {
     throw new Error('Refusing unrelated SSH signing request');
   }
   reader.end();
+  return requestedUser;
 }

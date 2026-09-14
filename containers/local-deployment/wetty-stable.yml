@@ -1,0 +1,18 @@
+# Proposed persistent WeTTY route. Not active in this directory.
+# Activate in Traefik’s watched /etc/traefik/conf directory.
+# Same mTLS policy as the Docker router; higher priority keeps routing stable.
+http:
+  routers:
+    wetty-stable:
+      rule: Host(`wetty.jans.space`)
+      entryPoints:
+      - websecure
+      priority: 100
+      service: wetty-stable
+      tls:
+        options: vault-mtls@file
+  services:
+    wetty-stable:
+      loadBalancer:
+        servers:
+        - url: http://wetty:3000
