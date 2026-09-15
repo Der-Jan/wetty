@@ -145,6 +145,7 @@ export function browserKeySession(
     let blob: Uint8Array;
     let supportsForwarding = false;
     let supportsKeyManagement = false;
+    let supportsLoginKeys = false;
     let managedRequests = 0;
     try {
       const response = fields(
@@ -167,6 +168,7 @@ export function browserKeySession(
       }
       blob = publicBlob(response.publicKey);
       supportsKeyManagement = response.keyManagement === 1;
+      supportsLoginKeys = supportsKeyManagement && response.loginKeys === 1;
       supportsForwarding =
         ssh.browserAgentForwarding === true && response.forwarding === true;
     } catch (error) {
@@ -225,7 +227,45 @@ export function browserKeySession(
       }
       return bytes(result.signature, 384);
     };
-    const created = await createBrowserAgent(blob, ssh.user, sign);
+    const manage =
+      (forwarded: boolean) =>
+      async (
+        operation: string,
+        payload: Record<string, unknown>,
+      ): Promise<Record<string, unknown>> => {
+        signal.throwIfAborted();
+        managedRequests += 1;
+        if (managedRequests > 128) {
+          throw new Error('Too many key management requests');
+        }
+        // Private imports must never travel in cacheable HTTP polling responses.
+        if (
+          operation === 'add' &&
+          (!socket.connected || socket.conn.transport.name !== 'websocket')
+        ) {
+          throw new Error('Key imports require an active WebSocket');
+        }
+        const result = fields(
+          await requestBrowser(
+            socket,
+            'browser-key:manage',
+            { v: 1, sessionId, operation, forwarded, ...payload },
+            signal,
+            operation === 'list' ? SIGN_TIMEOUT : 60000,
+          ),
+        );
+        signal.throwIfAborted();
+        if (result.v !== 1 || result.error) {
+          throw new Error('Browser key operation failed');
+        }
+        return result;
+      };
+    const created = await createBrowserAgent(
+      blob,
+      ssh.user,
+      sign,
+      supportsLoginKeys ? forwardedKeys(blob, sign, manage(false)) : undefined,
+    );
     if (signal.aborted) {
       await created.close();
       return;
@@ -233,39 +273,7 @@ export function browserKeySession(
     agent = created;
     if (supportsForwarding) {
       const managed = supportsKeyManagement
-        ? forwardedKeys(
-            blob,
-            (data) => sign(data, true),
-            async (operation, payload) => {
-              signal.throwIfAborted();
-              managedRequests += 1;
-              if (managedRequests > 128) {
-                throw new Error('Too many key management requests');
-              }
-              // Private imports must never travel in cacheable HTTP polling responses.
-              if (
-                operation === 'add' &&
-                (!socket.connected ||
-                  socket.conn.transport.name !== 'websocket')
-              ) {
-                throw new Error('Key imports require an active WebSocket');
-              }
-              const result = fields(
-                await requestBrowser(
-                  socket,
-                  'browser-key:manage',
-                  { v: 1, sessionId, operation, ...payload },
-                  signal,
-                  operation === 'list' ? SIGN_TIMEOUT : 60000,
-                ),
-              );
-              signal.throwIfAborted();
-              if (result.v !== 1 || result.error) {
-                throw new Error('Browser key operation failed');
-              }
-              return result;
-            },
-          )
+        ? forwardedKeys(blob, (data) => sign(data, true), manage(true))
         : undefined;
       const forwarded = await createBrowserAgent(
         blob,

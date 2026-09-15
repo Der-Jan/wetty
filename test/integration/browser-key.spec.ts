@@ -174,7 +174,10 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     setupBrowserSigner(client, approveSign, approveImport);
     if (legacyBrowser) {
       client.onAnyOutgoing((event: string, payload: unknown) => {
-        if (event === 'browser-key:result') delete fields(payload).forwarding;
+        if (event === 'browser-key:result') {
+          delete fields(payload).forwarding;
+          delete fields(payload).loginKeys;
+        }
       });
     }
     setupBrowserHostTrust(client, (...args) => {
@@ -375,6 +378,42 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
             browserAgentForwarding: true,
           });
           assert.doesNotMatch(denied.output, /IMPORTED_LOGIN_OK/);
+          // Only the imported key is authorized: prove the initial login uses it,
+          // even when forwarding is off, and still asks permission to sign.
+          await writeFile(
+            join(directory, 'authorized_keys'),
+            `${importedPublic}\n`,
+          );
+          let initialApprovals = 0;
+          const initial = await login(
+            'printf IMPORTED_INITIAL_OK',
+            { ...ssh, browserAgentForwarding: false },
+            false,
+            true,
+            () => true,
+            false,
+            () => {
+              initialApprovals += 1;
+              return true;
+            },
+          );
+          assert.match(initial.output, /IMPORTED_INITIAL_OK/);
+          assert.equal(initialApprovals, 1);
+          assert.equal(initial.signs, 0);
+          const refused = await login('printf MUST_NOT_RUN', ssh, false, true);
+          assert.match(refused.output, /password:/i);
+          assert.doesNotMatch(refused.output, /MUST_NOT_RUN/);
+          const legacy = await login(
+            'printf MUST_NOT_RUN',
+            ssh,
+            false,
+            true,
+            () => true,
+            false,
+            () => true,
+            true,
+          );
+          assert.match(legacy.output, /password:/i);
         } finally {
           await writeFile(join(directory, 'authorized_keys'), `${publicKey}\n`);
         }

@@ -100,6 +100,7 @@ export function setupBrowserSigner(
         publicKey,
         forwarding: context.forwarding,
         keyManagement: 1,
+        loginKeys: 1,
       });
     })().catch(() => {
       ack({ v: 1, error: 'KEY_UNAVAILABLE' });

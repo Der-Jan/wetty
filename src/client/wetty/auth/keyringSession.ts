@@ -1,4 +1,9 @@
-import { bytes, equalBytes, fields } from '../../../shared/browserAgent';
+import {
+  bytes,
+  checkUserAuth,
+  equalBytes,
+  fields,
+} from '../../../shared/browserAgent';
 import { checkForwardedAuth } from '../../../shared/forwardedAuth';
 import {
   keyFingerprint,
@@ -16,6 +21,7 @@ import type { Socket } from 'socket.io-client';
 
 export interface KeyringContext {
   sessionId: string;
+  user: string;
   forwarding: boolean;
   controller: AbortController;
   prompting: boolean;
@@ -29,7 +35,7 @@ export type ImportApproval = (
 export const promptKeyImport: ImportApproval = (description, signal) =>
   promptAgentAction(
     'Import SSH key into this browser?',
-    `${description}\nThis private key came from the remote host through WeTTY. Store it as a non-extractable key in this browser for future forwarded SSH connections? Each use will still require approval. This request expires in 45 seconds.`,
+    `${description}\nThis private key came from the remote host through WeTTY. Store it as a non-extractable key in this browser for future SSH connections? Each use will still require approval. This request expires in 45 seconds.`,
     'Import key',
     signal,
   );
@@ -65,10 +71,13 @@ export function setupKeyringSession(
       }
     };
     void (async () => {
+      const forwarded = request.forwarded !== false;
       if (
         !active ||
         !current() ||
-        !active.forwarding ||
+        (forwarded && !active.forwarding) ||
+        (request.forwarded !== undefined &&
+          typeof request.forwarded !== 'boolean') ||
         request.v !== 1 ||
         request.sessionId !== active.sessionId ||
         typeof request.requestId !== 'string' ||
@@ -92,6 +101,9 @@ export function setupKeyringSession(
       active.prompting = true;
       try {
         if (request.operation === 'add') {
+          if (!forwarded || !active.forwarding) {
+            throw new Error('Import requires forwarding');
+          }
           const packet = bytes(request.packet, 16384);
           try {
             const key = await prepareImportedKey(packet);
@@ -119,7 +131,9 @@ export function setupKeyringSession(
           const blob = bytes(request.blob, 2048);
           const algorithm = signatureAlgorithm(blob, Number(request.flags));
           const data = bytes(request.data, 32768);
-          const user = checkForwardedAuth(data, blob, algorithm);
+          const user = forwarded
+            ? checkForwardedAuth(data, blob, algorithm)
+            : checkUserAuth(data, active.user, blob, algorithm);
           const key = (await listImportedKeys()).find((candidate) =>
             equalBytes(candidate.blob, blob),
           );
@@ -130,6 +144,7 @@ export function setupKeyringSession(
             !(await approveSign(
               `${user} (key ${fingerprint})`,
               active.controller.signal,
+              !forwarded,
             ))
           ) {
             throw new Error('Signing declined');

@@ -43,9 +43,16 @@ If the file is encrypted, ssh-add asks for its passphrase in the remote
 terminal. The browser then shows the key comment and SHA256 fingerprint. Select
 **Import key** to persist the key as a non-extractable CryptoKey in the separate
 `wetty-imported-ssh-keys` IndexedDB database. The browser-generated login key is
-never replaced. Imports apply only to the forwarded agent, not the initial SSH
-login. Imported identities are listed again after reconnecting with that
-browser.
+never replaced. Imported identities are also available for the initial SSH login
+after reconnecting with that browser, even if agent forwarding is disabled. The
+generated key is advertised first, followed by all imported keys. Imported-key
+login requires **Allow once**, while the generated key retains its automatic
+initial-login behavior. Password fallback remains enabled. Older browser clients
+retain the single-key login behavior until reloaded.
+
+OpenSSH stops once a key succeeds. The SSH server's authentication-attempt limit
+can disconnect a client before all advertised keys or password fallback are
+tried if many keys are rejected; this change does not alter that server policy.
 
 Imports require an active WebSocket transport. They fail under HTTP polling to
 prevent private-key material from entering the service worker HTTP cache. Older

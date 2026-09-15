@@ -5,6 +5,12 @@ before the signing bridge was added. The private CryptoKey remains in IndexedDB
 and is never exported. The SSH server checks its public key against the fixed
 account's `authorized_keys`. Vault and certificates are not used yet.
 
+Keys previously imported with `ssh-add` are also advertised during initial
+login, after the generated key. Imported RSA and Ed25519 keys require approval
+each time they sign; forwarding need not be enabled to use them for login. See
+[agent key imports](browser-agent-forwarding.md#importing-keys-with-ssh-add) for
+storage, approval and server authentication-attempt limits.
+
 Click the key icon while your SSH terminal is ready to paste the public key at
 the cursor, without pressing Enter. For example, open `~/.ssh/authorized_keys`
 in an editor, enter insert mode on a new line, click the icon, then save the

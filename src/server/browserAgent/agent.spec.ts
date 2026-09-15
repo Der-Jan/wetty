@@ -149,6 +149,39 @@ describe('Browser SSH agent', function agentSuite() {
     }
   });
 
+  it('should restrict a multi-key login handler to listing and the configured user', async () => {
+    let calls = 0;
+    const managed = await createBrowserAgent(
+      blob,
+      'test',
+      (data) => key.sign(data),
+      () => {
+        calls += 1;
+        return Promise.resolve(new Uint8Array([6]));
+      },
+    );
+    try {
+      for (const packet of [
+        new Uint8Array([17]),
+        new Uint8Array([19]),
+        signPacket(blob, 2, 'other'),
+      ]) {
+        // eslint-disable-next-line no-await-in-loop
+        expect([...(await request(managed.path, packet))]).to.deep.equal([5]);
+      }
+      expect(calls).to.equal(0);
+      expect([
+        ...(await request(managed.path, new Uint8Array([11]))),
+      ]).to.deep.equal([6]);
+      expect([
+        ...(await request(managed.path, signPacket(blob))),
+      ]).to.deep.equal([6]);
+      expect(calls).to.equal(2);
+    } finally {
+      await managed.close();
+    }
+  });
+
   it('should use private filesystem permissions and clean up idempotently', async () => {
     expect((await stat(agent.path)).mode % 512).to.equal(0o600);
     expect((await stat(dirname(agent.path))).mode % 512).to.equal(0o700);

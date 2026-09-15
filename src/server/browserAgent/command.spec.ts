@@ -15,7 +15,9 @@ describe('Browser key SSH command policy', () => {
     );
     expect(args[0]).to.equal('/usr/bin/ssh');
     expect(args).to.include('PubkeyAuthentication=unbound');
-    expect(args).to.include('PubkeyAcceptedAlgorithms=rsa-sha2-256');
+    expect(args).to.include(
+      'PubkeyAcceptedAlgorithms=rsa-sha2-256,rsa-sha2-512,ssh-ed25519',
+    );
     expect(args).to.include('BatchMode=no');
     expect(args).to.include(
       'PreferredAuthentications=publickey,password,keyboard-interactive',

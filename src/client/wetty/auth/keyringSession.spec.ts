@@ -37,6 +37,7 @@ describe('Imported-key session authorization', () => {
     });
     active = {
       sessionId: 'session',
+      user: 'test',
       forwarding: true,
       controller: new AbortController(),
       prompting: false,
@@ -89,6 +90,25 @@ describe('Imported-key session authorization', () => {
       'KEY_OPERATION_FAILED',
     );
     assert.equal((await listImportedKeys()).length, 0);
+  });
+  it('should list login keys without forwarding but refuse login imports', async () => {
+    assert(active);
+    active.forwarding = false;
+    assert.deepEqual(
+      (await request({ operation: 'list', forwarded: false })).identities,
+      [],
+    );
+    assert.equal(
+      (
+        await request({
+          operation: 'add',
+          forwarded: false,
+          requestId: 'add',
+          packet: packet(),
+        })
+      ).error,
+      'KEY_OPERATION_FAILED',
+    );
   });
   it('should reject replay after an approved import', async () => {
     const payload = { operation: 'add', packet: packet() };

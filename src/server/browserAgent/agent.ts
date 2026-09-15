@@ -11,6 +11,7 @@ import {
   sshString,
 } from '../../shared/browserAgent.js';
 import { checkForwardedAuth } from '../../shared/forwardedAuth.js';
+import { signatureAlgorithm } from '../../shared/importedKeys.js';
 import { logger } from '../../shared/logger.js';
 import type { Socket } from 'node:net';
 
@@ -24,11 +25,8 @@ export async function createBrowserAgent(
   blob: Uint8Array,
   user: string | undefined,
   sign: (data: Uint8Array) => Promise<Uint8Array>,
-  handleForwarded?: (packet: Uint8Array) => Promise<Uint8Array>,
+  handleKeys?: (packet: Uint8Array) => Promise<Uint8Array>,
 ): Promise<BrowserAgent> {
-  if (handleForwarded && user !== undefined) {
-    throw new Error('Key management is forwarding-only');
-  }
   const reader = new Reader(blob);
   if (reader.text() !== 'ssh-rsa') throw new Error('Expected RSA public key');
   const e = reader.string();
@@ -54,7 +52,7 @@ export async function createBrowserAgent(
       return;
     }
     clients.add(client);
-    client.setTimeout(user === undefined ? 65000 : 15000, () =>
+    client.setTimeout(user === undefined || handleKeys ? 65000 : 15000, () =>
       client.destroy(),
     );
     client.on('error', () => client.destroy());
@@ -68,8 +66,23 @@ export async function createBrowserAgent(
         let reply: Uint8Array = new Uint8Array([5]);
         const request = new Reader(packet);
         const type = request.byte();
-        if (handleForwarded) {
-          reply = await handleForwarded(packet);
+        if (handleKeys) {
+          // A login socket is read-only and restricted to the configured user.
+          // The separate forwarded socket has its own per-use browser approvals.
+          if (user !== undefined) {
+            if (type === 11) request.end();
+            else if (type === 13) {
+              const requestedKey = request.string();
+              const data = request.string();
+              const algorithm = signatureAlgorithm(
+                requestedKey,
+                request.uint32(),
+              );
+              request.end();
+              checkUserAuth(data, user, requestedKey, algorithm);
+            } else throw new Error('Login agent operation not permitted');
+          }
+          reply = await handleKeys(packet);
         } else if (type === 11) {
           request.end();
           reply = new Uint8Array([

@@ -38,6 +38,18 @@ describe('Forwarded signing approval', () => {
     expect(await result).to.equal(false);
     expect(document.querySelector('dialog')).to.equal(null);
   });
+  it('should describe imported-key initial login separately', async () => {
+    const result = promptForwardSign(
+      'alice',
+      new AbortController().signal,
+      true,
+    );
+    expect(document.body.textContent)
+      .to.contain('configured SSH server')
+      .and.not.to.contain('remote process');
+    document.querySelector('button')?.click();
+    expect(await result).to.equal(false);
+  });
   it('should approve just the current request', async () => {
     const result = promptForwardSign('git', new AbortController().signal);
     document.querySelectorAll('button')[1].click();
