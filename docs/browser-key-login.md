@@ -38,6 +38,12 @@ profile and origin where you created the enrolled key; IndexedDB keys do not
 move between origins. HTTPS is required except for local development on HTTP
 localhost/loopback. `BROWSER_ORIGIN` is the equivalent environment variable.
 
+In browser-key mode, `--browser-origin` also supplies the Socket.IO origin
+allowlist when `--allowed-origin`, `ALLOWEDORIGINS`, and `server.allowedOrigins`
+are not configured. An explicitly configured allowlist must include the browser
+origin. Both origin checks apply; `--allow-missing-origin` does not bypass the
+browser-key check.
+
 The equivalent `ssh` configuration is:
 
 ```json5

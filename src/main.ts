@@ -118,6 +118,27 @@ const yargsInstance = yargs(hideBin(process.argv))
       'Allow WeTTY to be embedded in an iframe, defaults to allowing same origin',
     type: 'boolean',
   })
+  .option('ping-interval', {
+    description:
+      'Milliseconds between Socket.IO heartbeat pings sent to the client',
+    type: 'number',
+  })
+  .option('ping-timeout', {
+    description:
+      'Milliseconds to wait for a Socket.IO heartbeat pong before considering the connection dead. Raise this on high-latency or lossy links to avoid spurious "transport close" disconnects',
+    type: 'number',
+  })
+  .option('allowed-origin', {
+    description:
+      'Required trusted browser origin allowed to connect to Socket.IO. Repeat for multiple origins; also accepts ALLOWEDORIGINS',
+    type: 'string',
+    array: true,
+  })
+  .option('allow-missing-origin', {
+    description:
+      'Allow Socket.IO connections that have no Origin header (e.g. non-browser clients, CLI tools). Disabled by default. Also accepts the ALLOWMISSINGORIGIN environment variable',
+    type: 'boolean',
+  })
   .option('allow-remote-hosts', {
     description:
       'Allow WeTTY to use the `host` and `port` params in a url as ssh destination',
@@ -176,7 +197,9 @@ if (!opts.help) {
       process.once('SIGTERM', shutdown);
     })
     .catch((err: unknown) => {
-      logger().error('error in server', { err });
+      logger().error('error in server', {
+        err: err instanceof Error ? err.message : String(err),
+      });
       process.exitCode = 1;
     });
 } else {

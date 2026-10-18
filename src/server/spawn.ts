@@ -1,6 +1,8 @@
 import * as pty from 'node-pty';
 import { logger as getLogger } from '../shared/logger.js';
 import { tinybuffer, FlowControlServer } from './flowcontrol.js';
+import { writePtyInput } from './shared/input.js';
+import { logSafeArgs } from './shared/logsafe.js';
 import { xterm } from './shared/xterm.js';
 import { envVersionOr } from './spawn/env.js';
 import { ptyLifecycle } from './spawn/lifecycle.js';
@@ -26,6 +28,7 @@ export async function spawn(
     throw new Error('Client disconnected before PTY creation');
   }
   const cmd = version >= 9 ? ['-S', ...args] : args;
+  logger.debug('Spawning PTY', { cmd: logSafeArgs(cmd) });
   const term = options.env
     ? pty.spawn(args[0], args.slice(1), { ...xterm, env: options.env })
     : pty.spawn('/usr/bin/env', cmd, xterm);
@@ -64,8 +67,10 @@ export async function spawn(
         logger.debug('Resize rejected by PTY', { pid, err: error });
       }
     })
-    .on('input', (input: unknown) => {
-      if (typeof input === 'string') term.write(input);
+    .on('input', (input: unknown, binary?: unknown) => {
+      if (typeof input === 'string') {
+        writePtyInput(term, input, binary === true);
+      }
     })
     .on('commit', (size: unknown) => {
       if (

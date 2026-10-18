@@ -27,13 +27,17 @@ export interface SSLBuffer {
 }
 
 export interface Server {
-  [s: string]: string | number | boolean;
+  [s: string]: string | number | boolean | string[] | undefined;
   port: number;
   host: string;
   socket: string | boolean;
   title: string;
   base: string;
   allowIframe: boolean;
+  pingInterval?: number;
+  pingTimeout?: number;
+  allowedOrigins?: string[];
+  allowMissingOrigin?: boolean;
 }
 
 export interface Config {

@@ -47,6 +47,50 @@ If you'd prefer an HTTP base prefix other than `/`, you can specify that with
 **Do not set this to `/ssh/${something}`, as this will break username matching
 code.**
 
+## Allowed WebSocket Origins
+
+Configure every trusted browser origin explicitly with `--allowed-origin`,
+`ALLOWEDORIGINS`, or `server.allowedOrigins` in the config file. WeTTY refuses
+to start without at least one origin, including for local development.
+
+```sh
+wetty --allowed-origin http://localhost:3000
+# Behind an HTTPS reverse proxy:
+wetty --allowed-origin https://terminal.example.com
+```
+
+Repeat the flag to allow multiple origins. The `ALLOWEDORIGINS` environment
+variable accepts a comma-separated list. Each entry must be a complete HTTP(S)
+origin (scheme, hostname and optional port), without credentials, paths, query
+strings, fragments or wildcards. The base path is not part of the origin.
+
+Only configured origins are trusted. Matching request `Host` and `Origin`
+headers does not grant access, and forwarded headers never add trusted origins.
+Reverse proxies should preserve the browser-facing `Host` header. A browser may
+omit `Origin` on same-origin polling requests; these require both
+`Sec-Fetch-Site: same-origin` and a Host matching a configured origin's host and
+port. Rewriting Host to an internal backend name will prevent this
+missing-Origin polling fallback from working.
+
+### Allow connections without an Origin header
+
+Non-browser clients such as CLI tools and scripts may not send an `Origin`
+header or browser Fetch Metadata. By default WeTTY rejects these requests.
+
+To allow them, use `--allow-missing-origin`:
+
+```sh
+wetty --allowed-origin http://localhost:3000 --allow-missing-origin
+```
+
+The `ALLOWMISSINGORIGIN=true` environment variable has the same effect.
+
+> **Warning:** This opt-in bypasses origin protection for requests that omit
+> `Origin`, including the missing-Origin DNS-rebinding defense. Use it only
+> behind an independently authenticated, host-validating proxy. An explicit
+> origin allowlist is still required at startup. Supplied untrusted, malformed
+> or `null` origins remain rejected.
+
 ## Allow Remote Hosts
 
 By default WeTTY does not allow the `host` and `port` URL parameters to be used
@@ -57,6 +101,36 @@ as the SSH destination. To enable this, use the `--allow-remote-hosts` flag.
 By default WeTTY does not allow the `command` and `path` URL parameters to
 specify the command and working directory on the SSH host. To enable this, use
 the `--allow-remote-command` flag.
+
+## Socket.IO Ping Interval / Timeout
+
+WeTTY's browser terminal rides on a Socket.IO connection, kept alive with a
+heartbeat: the server pings the client every `--ping-interval` milliseconds
+(default `3000`) and expects a pong back within `--ping-timeout` milliseconds
+(default `7000`), or it closes the transport (shown to the user as a "transport
+close" error requiring reconnect).
+
+These defaults are tight compared to Socket.IO's own defaults (25000/20000). On
+a high-latency or lossy network path, a single delayed pong can exceed the 7
+second timeout and force a reconnect even though the underlying connection is
+otherwise healthy. If you see frequent "transport close" errors, try raising
+both, e.g. `--ping-interval 25000 --ping-timeout 20000`.
+
+Both flags also accept the `PINGINTERVAL` and `PINGTIMEOUT` environment
+variables.
+
+## Prometheus Metrics
+
+The unauthenticated metrics endpoint is `${base}/metrics` (`/metrics` with the
+default base). Restrict access at your reverse proxy if it exposes operational
+data you do not want to make public.
+
+HTTP metrics use five fixed route families: the terminal page, `/ssh/:user`,
+`/client/*`, `/sw.js`, and `unmatched`, prefixed by the configured base where
+applicable. Usernames, asset names, unknown paths and query strings are never
+retained as labels. Methods use the seven common HTTP methods or `OTHER`, and
+statuses are grouped into `2XX`, `3XX`, `4XX`, or `5XX`. Scrapes are not
+counted.
 
 ## Log Level
 
