@@ -74,4 +74,43 @@ describe('Forwarded signing approval', () => {
       clock.restore();
     }
   });
+  it('offers session consent only for a verified host-bound request and displays its path safely', async () => {
+    const result = promptForwardSign(
+      'git',
+      new AbortController().signal,
+      false,
+      {
+        hostFingerprint: 'SHA256:destination<img>',
+        forwardingHostFingerprints: ['SHA256:hop'],
+        canRemember: true,
+      },
+    );
+    expect(document.querySelector('img')).to.equal(null);
+    expect(document.body.textContent)
+      .to.contain('SHA256:destination<img>')
+      .and.contain('Forwarding host 1: SHA256:hop');
+    const buttons = document.querySelectorAll('button');
+    expect(buttons[2].textContent).to.equal('Allow until disconnected');
+    expect(document.activeElement).to.equal(buttons[0]);
+    buttons[2].click();
+    expect(await result).to.equal('session');
+  });
+  it('keeps non-hostbound authentication on one-use approval', async () => {
+    const result = promptForwardSign(
+      'git',
+      new AbortController().signal,
+      false,
+      {
+        hostFingerprint: 'SHA256:host',
+        forwardingHostFingerprints: [],
+        canRemember: false,
+      },
+    );
+    expect(document.querySelectorAll('button')).to.have.length(2);
+    expect(document.body.textContent).to.contain(
+      'approval is for this use only',
+    );
+    document.querySelector('button')?.click();
+    expect(await result).to.equal(false);
+  });
 });

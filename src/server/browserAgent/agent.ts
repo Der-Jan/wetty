@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createPublicKey, verify, randomUUID } from 'node:crypto';
 import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -20,12 +20,21 @@ export interface BrowserAgent {
   close(): Promise<void>;
 }
 
+export interface AgentBindings {
+  bind(connectionId: string, packet: Uint8Array): Promise<void>;
+  close(connectionId: string): void;
+}
+
 /** The only private operation is delegated to the session's browser signer. */
 export async function createBrowserAgent(
   blob: Uint8Array,
   user: string | undefined,
-  sign: (data: Uint8Array) => Promise<Uint8Array>,
-  handleKeys?: (packet: Uint8Array) => Promise<Uint8Array>,
+  sign: (data: Uint8Array, connectionId?: string) => Promise<Uint8Array>,
+  handleKeys?: (
+    packet: Uint8Array,
+    connectionId?: string,
+  ) => Promise<Uint8Array>,
+  bindings?: AgentBindings,
 ): Promise<BrowserAgent> {
   const reader = new Reader(blob);
   if (reader.text() !== 'ssh-rsa') throw new Error('Expected RSA public key');
@@ -52,11 +61,16 @@ export async function createBrowserAgent(
       return;
     }
     clients.add(client);
+    const connectionId = randomUUID();
+    let bindingFailed = false;
     client.setTimeout(user === undefined || handleKeys ? 65000 : 15000, () =>
       client.destroy(),
     );
     client.on('error', () => client.destroy());
-    client.once('close', () => clients.delete(client));
+    client.once('close', () => {
+      clients.delete(client);
+      bindings?.close(connectionId);
+    });
     let buffer = Buffer.alloc(0);
     let queue = Promise.resolve();
     const available = (): boolean => !closed && !client.destroyed;
@@ -66,9 +80,25 @@ export async function createBrowserAgent(
         let reply: Uint8Array = new Uint8Array([5]);
         const request = new Reader(packet);
         const type = request.byte();
-        if (handleKeys) {
+        if (type === 27 && bindings) {
+          // Unknown extensions do not poison a valid connection. A malformed
+          // or failed session-bind does: OpenSSH must not silently fall back.
+          const extension = request.text();
+          if (extension === 'session-bind@openssh.com') {
+            try {
+              if (bindingFailed) throw new Error('Binding previously failed');
+              await bindings.bind(connectionId, packet);
+              reply = new Uint8Array([6]);
+            } catch {
+              bindingFailed = true;
+              reply = new Uint8Array([28]);
+            }
+          }
+        } else if (bindingFailed) {
+          throw new Error('Agent binding failed');
+        } else if (handleKeys) {
           // A login socket is read-only and restricted to the configured user.
-          // The separate forwarded socket has its own per-use browser approvals.
+          // The separate forwarded socket has browser-controlled approvals.
           if (user !== undefined) {
             if (type === 11) request.end();
             else if (type === 13) {
@@ -82,7 +112,7 @@ export async function createBrowserAgent(
               checkUserAuth(data, user, requestedKey, algorithm);
             } else throw new Error('Login agent operation not permitted');
           }
-          reply = await handleKeys(packet);
+          reply = await handleKeys(packet, connectionId);
         } else if (type === 11) {
           request.end();
           reply = new Uint8Array([
@@ -102,7 +132,7 @@ export async function createBrowserAgent(
           if (flags === 2 && equalBytes(requestedKey, blob)) {
             if (user === undefined) checkForwardedAuth(data, blob);
             else checkUserAuth(data, user, blob);
-            const signature = await sign(data);
+            const signature = await sign(data, connectionId);
             if (
               signature.length !== 384 ||
               !verify('RSA-SHA256', data, publicKey, signature)

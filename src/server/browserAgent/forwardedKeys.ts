@@ -16,25 +16,26 @@ import {
 export type KeyRequest = (
   operation: string,
   payload: Record<string, unknown>,
+  connectionId?: string,
 ) => Promise<Record<string, unknown>>;
 /** Only public metadata and transient protocol buffers live in the backend. */
 export function forwardedKeys(
   primary: Uint8Array,
-  signPrimary: (data: Uint8Array) => Promise<Uint8Array>,
+  signPrimary: (data: Uint8Array, connectionId?: string) => Promise<Uint8Array>,
   requestBrowser: KeyRequest,
-): (packet: Uint8Array) => Promise<Uint8Array> {
-  return async (packet) => {
+): (packet: Uint8Array, connectionId?: string) => Promise<Uint8Array> {
+  return async (packet, connectionId) => {
     const reader = new Reader(packet);
     const type = reader.byte();
     if (type === 17) {
       if (packet.length > 16384) throw new Error('Import exceeds limit');
-      const result = await requestBrowser('add', { packet });
+      const result = await requestBrowser('add', { packet }, connectionId);
       if (result.ok !== true) throw new Error('Import refused');
       return new Uint8Array([6]);
     }
     if (type === 11) {
       reader.end();
-      const result = await requestBrowser('list', {});
+      const result = await requestBrowser('list', {}, connectionId);
       if (
         !Array.isArray(result.identities) ||
         result.identities.length > MAX_IMPORTED_KEYS
@@ -77,9 +78,13 @@ export function forwardedKeys(
       if (algorithm !== 'rsa-sha2-256') {
         throw new Error('Browser-generated key requires SHA-256');
       }
-      signature = await signPrimary(data);
+      signature = await signPrimary(data, connectionId);
     } else {
-      const result = await requestBrowser('sign', { blob, data, flags });
+      const result = await requestBrowser(
+        'sign',
+        { blob, data, flags },
+        connectionId,
+      );
       signature = bytes(result.signature, 1024);
     }
     const { jwk } = publicIdentity(blob);

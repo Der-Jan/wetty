@@ -7,6 +7,7 @@ import {
 } from '../../../shared/browserAgent';
 import { checkForwardedAuth } from '../../../shared/forwardedAuth';
 import { promptForwardSign } from './forwardPrompt';
+import { ForwardedApprovals } from './forwardedApprovals';
 import { setupKeyringSession } from './keyringSession';
 import { loadSshKey } from './keys';
 import type { ForwardApproval } from './forwardPrompt';
@@ -31,6 +32,7 @@ export function setupBrowserSigner(
         forwarding: boolean;
         controller: AbortController;
         prompting: boolean;
+        approvals: ForwardedApprovals;
       }
     | undefined;
   let preparing: string | undefined;
@@ -83,6 +85,7 @@ export function setupBrowserSigner(
       const key = await loadSshKey(BROWSER_KEY_SCOPE);
       const publicKey = await key.publicKey();
       if (!socket.connected || preparing !== sessionId) return;
+      const controller = new AbortController();
       context = {
         sessionId,
         user: target.user,
@@ -91,7 +94,8 @@ export function setupBrowserSigner(
         seen: new Set(),
         managedRequests: new Set(),
         forwarding: request.forwarding === true,
-        controller: new AbortController(),
+        controller,
+        approvals: new ForwardedApprovals(controller.signal),
         prompting: false,
       };
       ack({
@@ -101,9 +105,70 @@ export function setupBrowserSigner(
         forwarding: context.forwarding,
         keyManagement: 1,
         loginKeys: 1,
+        sessionBinding: 1,
       });
     })().catch(() => {
       ack({ v: 1, error: 'KEY_UNAVAILABLE' });
+    });
+  });
+  socket.on('browser-key:agent-close', (payload: unknown) => {
+    try {
+      const request = fields(payload);
+      if (request.v === 1 && request.sessionId === context?.sessionId) {
+        context?.approvals.close(request.agentConnectionId);
+      }
+    } catch {
+      /* Invalid lifecycle messages cannot change approval state. */
+    }
+  });
+  socket.on('browser-key:bind', (payload: unknown) => {
+    const active = context;
+    const connectionId = socket.id;
+    void (async () => {
+      const request = fields(payload);
+      try {
+        if (
+          !active ||
+          !active.forwarding ||
+          request.v !== 1 ||
+          request.sessionId !== active.sessionId ||
+          typeof request.requestId !== 'string' ||
+          request.requestId.length > 64 ||
+          active.seen.has(request.requestId) ||
+          active.seen.size >= 160
+        ) {
+          throw new Error('Invalid binding request');
+        }
+        active.seen.add(request.requestId);
+        await active.approvals.bind(request.agentConnectionId, request.packet);
+        if (
+          socket.connected &&
+          socket.id === connectionId &&
+          context === active
+        ) {
+          socket.emit('browser-key:result', {
+            v: 1,
+            sessionId: active.sessionId,
+            requestId: request.requestId,
+            ok: true,
+          });
+        }
+      } catch {
+        if (
+          socket.connected &&
+          socket.id === connectionId &&
+          context === active
+        ) {
+          socket.emit('browser-key:result', {
+            v: 1,
+            sessionId: request.sessionId,
+            requestId: request.requestId,
+            error: 'BIND_FAILED',
+          });
+        }
+      }
+    })().catch(() => {
+      /* Malformed envelope: no reply. */
     });
   });
   socket.on('browser-key:sign', (payload: unknown) => {
@@ -138,7 +203,7 @@ export function setupBrowserSigner(
         typeof request.requestId !== 'string' ||
         request.requestId.length > 64 ||
         active.seen.has(request.requestId) ||
-        active.seen.size >= 32
+        active.seen.size >= 160
       ) {
         throw new Error('Invalid SSH signing request');
       }
@@ -160,9 +225,14 @@ export function setupBrowserSigner(
       if (forwarded) {
         active.prompting = true;
         try {
-          if (!(await approve(user, active.controller.signal))) {
-            throw new Error('Signing declined');
-          }
+          await active.approvals.approve(
+            request.agentConnectionId,
+            data,
+            active.blob,
+            'rsa-sha2-256',
+            approve,
+            user,
+          );
         } finally {
           active.prompting = false;
         }
@@ -170,6 +240,7 @@ export function setupBrowserSigner(
       active.controller.signal.throwIfAborted();
       if (!current()) return;
       const signature = await active.key.sign(data);
+      if (forwarded) active.approvals.assertCurrent(request.agentConnectionId);
       if (socket.connected && context === active) {
         ack({
           v: 1,

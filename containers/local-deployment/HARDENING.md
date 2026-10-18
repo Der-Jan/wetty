@@ -47,20 +47,22 @@ The original application image `wetty.local` is retained for rollback.
 ## Browser agent forwarding
 
 The deployment enables `--browser-agent-forwarding`. The forwarded socket is
-separate from the login socket and each onward signing request requires browser
-approval. Forwarding requires a freshly loaded client with approval support. Use
-`ssh-add -L` to list the browser key. For onward SSH use:
+separate from the login socket. Onward signing requires browser approval;
+verified host-bound destinations can be approved until disconnected. Forwarding
+requires a freshly loaded client with approval support. Use `ssh-add -L` to list
+the browser key. For onward SSH use:
 
 ```sh
-ssh -o PubkeyAuthentication=unbound -o PubkeyAcceptedAlgorithms=rsa-sha2-256 user@destination
+ssh -o PubkeyAuthentication=yes -o PubkeyAcceptedAlgorithms=rsa-sha2-256 user@destination
 ```
 
 The Compose login command refreshes a stable agent symlink before attaching to
 tmux. Existing panes must set SSH_AUTH_SOCK to ~/.ssh/agent.sock once. RSA and
 Ed25519 keys can be imported with ssh-add after browser approval. Imports
 require WebSocket transport and persist as non-extractable CryptoKeys in
-IndexedDB. The onward destination is not verified by the browser; approve only
-operations you started.
+IndexedDB. The browser verifies session bindings and displays host-key
+fingerprints; hostname verification remains the onward SSH client's
+responsibility. Approve only operations you started.
 
 To roll back only forwarding, restore `compose.yaml.before-forwarding`, set its
 image to `wetty.hardened.before-forwarding`, then run
@@ -73,9 +75,9 @@ Reload WeTTY after upgrading, then run `ssh-add ~/.ssh/id_ed25519` or
 `ssh-add ~/.ssh/id_rsa` in the remote terminal and approve the fingerprint in
 the browser. Imported RSA keys support SHA-256 and SHA-512; Ed25519 uses its
 native algorithm. The eight-key imported store is separate from the generated
-login key. Every use still needs approval. Constraints and removal are not
-implemented; see the repository's docs/browser-agent-forwarding.md for
-limitations.
+login key. Verified host-bound destinations can reuse a session approval.
+Constraints and removal are not implemented; see the repository's
+docs/browser-agent-forwarding.md for limitations.
 
 The Compose login command continues to update ~/.ssh/agent.sock before tmux
 attachment. Keep SSH_AUTH_SOCK set to that stable path in existing panes.

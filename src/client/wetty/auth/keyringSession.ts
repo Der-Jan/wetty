@@ -17,6 +17,7 @@ import {
   signImportedKey,
 } from './importedKeys';
 import type { ForwardApproval } from './forwardPrompt';
+import type { ForwardedApprovals } from './forwardedApprovals';
 import type { Socket } from 'socket.io-client';
 
 export interface KeyringContext {
@@ -27,6 +28,7 @@ export interface KeyringContext {
   prompting: boolean;
   blob: Uint8Array;
   managedRequests: Set<string>;
+  approvals?: ForwardedApprovals;
 }
 export type ImportApproval = (
   description: string,
@@ -35,7 +37,7 @@ export type ImportApproval = (
 export const promptKeyImport: ImportApproval = (description, signal) =>
   promptAgentAction(
     'Import SSH key into this browser?',
-    `${description}\nThis private key came from the remote host through WeTTY. Store it as a non-extractable key in this browser for future SSH connections? Each use will still require approval. This request expires in 45 seconds.`,
+    `${description}\nThis private key came from the remote host through WeTTY. Store it as a non-extractable key in this browser for future SSH connections? SSH authentication requires your approval; verified host-bound destinations can be approved until disconnected. This request expires in 45 seconds.`,
     'Import key',
     signal,
   );
@@ -140,7 +142,16 @@ export function setupKeyringSession(
           if (!key) throw new Error('Unknown imported key');
           const fingerprint = await keyFingerprint(blob);
           if (!current()) return;
-          if (
+          if (forwarded && active.approvals) {
+            await active.approvals.approve(
+              request.agentConnectionId,
+              data,
+              blob,
+              algorithm,
+              approveSign,
+              `${user} (key ${fingerprint})`,
+            );
+          } else if (
             !(await approveSign(
               `${user} (key ${fingerprint})`,
               active.controller.signal,
@@ -151,7 +162,11 @@ export function setupKeyringSession(
           }
           active.controller.signal.throwIfAborted();
           if (!current()) return;
-          ack({ signature: await signImportedKey(key, algorithm, data) });
+          const signature = await signImportedKey(key, algorithm, data);
+          if (forwarded) {
+            active.approvals?.assertCurrent(request.agentConnectionId);
+          }
+          if (current()) ack({ signature });
         } else throw new Error('Unsupported key management operation');
       } finally {
         active.prompting = false;

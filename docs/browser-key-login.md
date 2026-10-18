@@ -7,7 +7,8 @@ account's `authorized_keys`. Vault and certificates are not used yet.
 
 Keys previously imported with `ssh-add` are also advertised during initial
 login, after the generated key. Imported RSA and Ed25519 keys require approval
-each time they sign; forwarding need not be enabled to use them for login. See
+for initial login; forwarded host-bound destinations may be approved until
+disconnected. Forwarding need not be enabled to use imported keys for login. See
 [agent key imports](browser-agent-forwarding.md#importing-keys-with-ssh-add) for
 storage, approval and server authentication-attempt limits.
 

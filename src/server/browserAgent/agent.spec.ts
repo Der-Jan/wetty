@@ -7,6 +7,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import 'mocha';
 import { loadSshKey } from '../../client/wetty/auth/keys';
 import { publicBlob, Reader, sshString } from '../../shared/browserAgent';
+import { verifySessionBinding } from '../../shared/sessionBinding';
+import { bindingHost } from '../../shared/sessionBinding.test-utils';
 import { createBrowserAgent } from './agent';
 import type { BrowserAgent } from './agent';
 import type { BrowserSshKey } from '../../client/wetty/auth/keys';
@@ -202,5 +204,78 @@ describe('Browser SSH agent', function agentSuite() {
     client.write(new Uint8Array([127, 255, 255, 255]));
     await closed;
     expect(signs).to.equal(0);
+  });
+  it('isolates extension state per Unix connection and rejects a failed binding before signing', async () => {
+    const connections: string[] = [];
+    let closeConnection: (id: string) => void = () => {
+      throw new Error('No waiter');
+    };
+    const closed = new Promise<string>((resolve) => {
+      closeConnection = resolve;
+    });
+    const bound = await createBrowserAgent(
+      blob,
+      undefined,
+      (data) => {
+        signs += 1;
+        return key.sign(data);
+      },
+      undefined,
+      {
+        bind: async (id, packet) => {
+          connections.push(id);
+          await verifySessionBinding(packet);
+        },
+        close: (id) => {
+          if (id === connections[0]) closeConnection(id);
+        },
+      },
+    );
+    const client = createConnection(bound.path);
+    const exchange = async (packet: Uint8Array): Promise<Buffer> => {
+      const response = new Promise<Buffer>((resolve, reject) => {
+        let buffer = Buffer.alloc(0);
+        client.on('error', reject);
+        const receive = (chunk: Buffer): void => {
+          buffer = Buffer.concat([buffer, chunk]);
+          if (
+            buffer.length >= 4 &&
+            buffer.length === buffer.readUInt32BE(0) + 4
+          ) {
+            client.off('data', receive);
+            client.off('error', reject);
+            resolve(buffer.subarray(4));
+          }
+        };
+        client.on('data', receive);
+      });
+      client.write(sshString(packet));
+      return response;
+    };
+    try {
+      await once(client, 'connect');
+      expect([
+        ...(await exchange(
+          new Uint8Array([27, ...sshString('unknown@example')]),
+        )),
+      ]).to.deep.equal([5]);
+      const host = bindingHost();
+      expect([...(await exchange(host.packet()))]).to.deep.equal([6]);
+      const broken = host.packet();
+      broken[broken.length - 2] = (broken[broken.length - 2] + 1) % 256;
+      expect([...(await exchange(broken))]).to.deep.equal([28]);
+      expect([...(await exchange(signPacket(blob)))]).to.deep.equal([5]);
+      expect(signs).to.equal(0);
+      expect(connections).to.have.length(2);
+      expect(connections[0]).to.equal(connections[1]);
+      // A fresh socket has independent failure state and still permits consent.
+      expect((await request(bound.path, signPacket(blob)))[0]).to.equal(14);
+      expect(signs).to.equal(1);
+      client.destroy();
+      expect(await closed).to.equal(connections[0]);
+    } finally {
+      client.destroy();
+      await bound.close();
+    }
   });
 });

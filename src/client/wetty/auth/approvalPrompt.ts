@@ -4,8 +4,20 @@ export function promptAgentAction(
   action: string,
   signal: AbortSignal,
 ): Promise<boolean> {
+  return promptAgentChoice(heading, message, action, signal).then(
+    (value) => value === true,
+  );
+}
+
+export function promptAgentChoice(
+  heading: string,
+  message: string,
+  action: string,
+  signal: AbortSignal,
+  remember = false,
+): Promise<boolean | 'session'> {
   signal.throwIfAborted();
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean | 'session'>((resolve) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'ssh-host-trust';
     const title = document.createElement('h2');
@@ -26,7 +38,7 @@ export function promptAgentAction(
     dialog.append(title, details, actions);
     let finished = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (accepted: boolean): void => {
+    const finish = (accepted: boolean | 'session'): void => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
@@ -35,6 +47,15 @@ export function promptAgentAction(
       dialog.remove();
       resolve(accepted);
     };
+    if (remember) {
+      const session = document.createElement('button');
+      session.type = 'button';
+      session.textContent = 'Allow until disconnected';
+      session.addEventListener('click', () => {
+        finish('session');
+      });
+      actions.append(session);
+    }
     timer = setTimeout(() => {
       finish(false);
     }, 45000);

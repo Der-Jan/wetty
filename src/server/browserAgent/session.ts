@@ -146,6 +146,8 @@ export function browserKeySession(
     let supportsForwarding = false;
     let supportsKeyManagement = false;
     let supportsLoginKeys = false;
+    let supportsBindings = false;
+    let bindingRequests = 0;
     let managedRequests = 0;
     try {
       const response = fields(
@@ -171,6 +173,7 @@ export function browserKeySession(
       supportsLoginKeys = supportsKeyManagement && response.loginKeys === 1;
       supportsForwarding =
         ssh.browserAgentForwarding === true && response.forwarding === true;
+      supportsBindings = supportsForwarding && response.sessionBinding === 1;
     } catch (error) {
       if (signal.aborted) return;
       logger().info(
@@ -197,6 +200,7 @@ export function browserKeySession(
     const sign = async (
       data: Uint8Array,
       forwarded = false,
+      agentConnectionId?: string,
     ): Promise<Uint8Array> => {
       signingRequests += 1;
       if (signingRequests > 32) throw new Error('Too many signing requests');
@@ -211,6 +215,7 @@ export function browserKeySession(
             requestId,
             algorithm: 'rsa-sha2-256',
             forwarded,
+            ...(forwarded ? { agentConnectionId } : {}),
             data,
           },
           signal,
@@ -232,6 +237,7 @@ export function browserKeySession(
       async (
         operation: string,
         payload: Record<string, unknown>,
+        agentConnectionId?: string,
       ): Promise<Record<string, unknown>> => {
         signal.throwIfAborted();
         managedRequests += 1;
@@ -249,7 +255,14 @@ export function browserKeySession(
           await requestBrowser(
             socket,
             'browser-key:manage',
-            { v: 1, sessionId, operation, forwarded, ...payload },
+            {
+              v: 1,
+              sessionId,
+              operation,
+              forwarded,
+              ...payload,
+              ...(forwarded ? { agentConnectionId } : {}),
+            },
             signal,
             operation === 'list' ? SIGN_TIMEOUT : 60000,
           ),
@@ -263,8 +276,10 @@ export function browserKeySession(
     const created = await createBrowserAgent(
       blob,
       ssh.user,
-      sign,
-      supportsLoginKeys ? forwardedKeys(blob, sign, manage(false)) : undefined,
+      (data) => sign(data),
+      supportsLoginKeys
+        ? forwardedKeys(blob, (data) => sign(data), manage(false))
+        : undefined,
     );
     if (signal.aborted) {
       await created.close();
@@ -273,13 +288,50 @@ export function browserKeySession(
     agent = created;
     if (supportsForwarding) {
       const managed = supportsKeyManagement
-        ? forwardedKeys(blob, (data) => sign(data, true), manage(true))
+        ? forwardedKeys(blob, (data, id) => sign(data, true, id), manage(true))
         : undefined;
       const forwarded = await createBrowserAgent(
         blob,
         undefined,
-        (data) => sign(data, true),
+        (data, id) => sign(data, true, id),
         managed,
+        supportsBindings
+          ? {
+              bind: async (agentConnectionId, packet) => {
+                bindingRequests += 1;
+                if (bindingRequests > 128) {
+                  throw new Error('Too many binding requests');
+                }
+                const result = fields(
+                  await requestBrowser(
+                    socket,
+                    'browser-key:bind',
+                    {
+                      v: 1,
+                      sessionId,
+                      agentConnectionId,
+                      packet,
+                    },
+                    signal,
+                    SIGN_TIMEOUT,
+                  ),
+                );
+                signal.throwIfAborted();
+                if (result.v !== 1 || result.ok !== true) {
+                  throw new Error('Browser refused agent binding');
+                }
+              },
+              close: (agentConnectionId) => {
+                if (socket.connected && !signal.aborted) {
+                  socket.emit('browser-key:agent-close', {
+                    v: 1,
+                    sessionId,
+                    agentConnectionId,
+                  });
+                }
+              },
+            }
+          : undefined,
       );
       try {
         signal.throwIfAborted();

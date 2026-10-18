@@ -9,6 +9,14 @@ export function checkForwardedAuth(
   key: Uint8Array,
   algorithm = 'rsa-sha2-256',
 ): string {
+  return forwardedAuth(data, key, algorithm).user;
+}
+
+export function forwardedAuth(
+  data: Uint8Array,
+  key: Uint8Array,
+  algorithm = 'rsa-sha2-256',
+): { user: string; session: Uint8Array; host?: Uint8Array } {
   if (data.length > 32768) throw new Error('SSH signing payload exceeds limit');
   const reader = new Reader(data);
   const exchange = reader.string();
@@ -17,7 +25,10 @@ export function checkForwardedAuth(
   const service = reader.text();
   const method = reader.text();
   if (method !== 'publickey-hostbound-v00@openssh.com') {
-    return checkUserAuth(data, undefined, key, algorithm);
+    return {
+      user: checkUserAuth(data, undefined, key, algorithm),
+      session: exchange,
+    };
   }
   const hasSignature = reader.byte();
   const requestedAlgorithm = reader.text();
@@ -29,7 +40,7 @@ export function checkForwardedAuth(
   hostKey(`${type} ${btoa(String.fromCharCode(...host))}`);
   // Reuse strict checks of every ordinary authentication field. The caller
   // signs data, never this normalized validation-only representation.
-  return checkUserAuth(
+  const validatedUser = checkUserAuth(
     new Uint8Array([
       ...sshString(exchange),
       message,
@@ -44,4 +55,5 @@ export function checkForwardedAuth(
     key,
     algorithm,
   );
+  return { user: validatedUser, session: exchange, host };
 }

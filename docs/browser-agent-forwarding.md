@@ -9,19 +9,23 @@ On a fresh remote SSH session:
 
 ```sh
 ssh-add -L
-ssh -o PubkeyAuthentication=unbound -o PubkeyAcceptedAlgorithms=rsa-sha2-256 user@destination
+ssh -o PubkeyAuthentication=yes -o PubkeyAcceptedAlgorithms=rsa-sha2-256 user@destination
 ```
 
 The destination must authorize the browser public key. Approve the request in
-the browser with **Allow once**. Each forwarded signature requires approval,
-even when the onward username matches the initial SSH username. Denial, closing
-the dialog, 45 seconds without approval, browser disconnect or logout prevents
+the browser with **Allow once**, or **Allow until disconnected** when the
+request has a verified session binding and a host-bound signature. Remembered
+approvals apply only to the exact key, username and complete host-key forwarding
+path. A fresh SSH connection must verify its own binding before reusing a grant.
+Requests without these proofs continue to require one-use approval, even when
+the onward username matches the initial SSH username. Denial, closing the
+dialog, 45 seconds without approval, browser disconnect or logout prevents
 completion. Only one approval dialog is allowed per browser signing session.
 
 For Git, select the same SSH options, for example:
 
 ```sh
-GIT_SSH_COMMAND='ssh -o PubkeyAuthentication=unbound -o PubkeyAcceptedAlgorithms=rsa-sha2-256' git fetch
+GIT_SSH_COMMAND='ssh -o PubkeyAuthentication=yes -o PubkeyAcceptedAlgorithms=rsa-sha2-256' git fetch
 ```
 
 The browser-generated key remains tied to RSA SHA-256. Imported RSA keys support
@@ -64,14 +68,16 @@ unlike the browser-generated key. JavaScript does not guarantee complete memory
 zeroization. Only the browser's persisted copy is non-extractable.
 
 Both ordinary `publickey` and OpenSSH's `publickey-hostbound-v00@openssh.com`
-authentication formats are accepted for forwarded signing. The included host key
-is checked for valid encoding, but this does not implement agent session binding
-or independently establish trust in the onward destination. The original payload
-is signed unchanged. Initial login retains its unbound-only policy.
+authentication formats are accepted for forwarded signing. OpenSSH
+`session-bind@openssh.com` proofs are verified independently in the browser with
+WebCrypto. The final session identifier and any signed destination host key must
+match the connection binding. Only a host-bound signature with a verified
+binding can reuse an approval. The original payload is signed unchanged. Initial
+login retains its unbound-only policy.
 
-Every forwarded use still requires **Allow once**; importing a key does not
-grant blanket signing permission. Select a particular imported identity using
-its public-key file, for example:
+Generated and imported keys use the same approval policy. Importing a key does
+not grant signing permission. Select a particular imported identity using its
+public-key file, for example:
 
 ```sh
 ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519.pub user@destination
@@ -104,13 +110,31 @@ management has a separate limit of 128 requests per connection, including
 identity listings, imports and signatures. Reconnect after reaching a request
 limit.
 
-The browser does not verify the onward destination or implement OpenSSH session
-binding/destination constraints. Its approval describes the username, not a
-verified hostname. Only approve operations you initiated. The WeTTY backend
-remains trusted, and processes with access to the remote agent socket can
-request signatures while it is forwarded. Host trust for onward connections is
-handled by the onward SSH client; it is not stored in the browser by this
-feature.
+Verified requests display the destination host-key fingerprint and the complete
+forwarding path. A verified session binding proves possession of the host key;
+it does not establish trust in a hostname. Hostname verification remains the
+onward SSH client's responsibility. OpenSSH clients and servers that do not
+provide a verifiable host-bound request retain **Allow once**. Do not force
+`PubkeyAuthentication=unbound` when you want reusable approvals; `yes`
+negotiates host-bound authentication when supported, and `host-bound` requires
+it.
+
+Grants live only in browser memory for the current WeTTY connection. Closing the
+tab/browser, reloading, disconnecting or logging out discards them. There is no
+persistent grant store or extra clearing button. Closing an individual agent
+socket clears its bindings and cancels its pending approval; grants remain
+usable by new connections only after they verify the same exact host-key path.
+
+Binding state is isolated per agent socket connection, limited to four active
+connections and 16 bindings per connection. Authentication closes a binding
+chain; it cannot be extended or rebound. Invalid bindings disable that
+connection. Session grants are capped at 128, and binding requests at 128 per
+WeTTY session. Ed25519, RSA SHA-256/SHA-512 and NIST P-256/P-384/P-521 host
+signatures are supported; certificates and security-key host formats are
+rejected. This does not implement `ssh-add -h` destination constraints. The
+WeTTY backend remains trusted, and processes with access to the remote agent
+socket can request authentication to an approved key/user/host path while the
+browser remains connected.
 
 The local Compose command refreshes `~/.ssh/agent.sock` before attaching to
 tmux. Existing panes must have SSH_AUTH_SOCK set to that stable path. The

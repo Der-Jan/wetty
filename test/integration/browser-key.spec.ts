@@ -17,6 +17,7 @@ import { validateBrowserSsh } from '../../src/server/browserAgent/command';
 import { browserSshIntegration } from '../../src/server/browserAgent/integration';
 import { BROWSER_KEY_SCOPE, fields } from '../../src/shared/browserAgent';
 import { sshDefault } from '../../src/shared/defaults';
+import type { ForwardApproval } from '../../src/client/wetty/auth/forwardPrompt';
 import type { HostApproval } from '../../src/client/wetty/auth/hostTrust';
 import type { ImportApproval } from '../../src/client/wetty/auth/keyringSession';
 import type { SSH } from '../../src/shared/interfaces';
@@ -131,10 +132,7 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     stopAtPassword = false,
     approve: HostApproval = () => true,
     dropOnHost = false,
-    approveSign: (
-      user: string,
-      signal: AbortSignal,
-    ) => boolean | Promise<boolean> = () => false,
+    approveSign: ForwardApproval = () => false,
     legacyBrowser = false,
     approveImport?: ImportApproval,
     pollingOnly = false,
@@ -288,6 +286,84 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
     assert.match(result.output, /Permission denied|signing failed/);
   });
 
+  it('reuses a host-bound grant across fresh real SSH connections until the browser disconnects', async () => {
+    const onward = onwardCommand().replace(
+      'PubkeyAuthentication=unbound',
+      'PubkeyAuthentication=host-bound',
+    );
+    let approvals = 0;
+    const approve: ForwardApproval = (
+      _user,
+      _signal,
+      _initial,
+      destination,
+    ) => {
+      assert.equal(destination?.canRemember, true);
+      assert.equal(destination.forwardingHostFingerprints.length, 1);
+      approvals += 1;
+      return 'session';
+    };
+    const first = await login(
+      `${onward} && ${onward}`,
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      approve,
+    );
+    assert.equal(
+      first.output.split('FORWARDED_LOGIN_OK').length - 1,
+      2,
+      first.output,
+    );
+    assert.equal(approvals, 1);
+    const second = await login(
+      onward,
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      approve,
+    );
+    assert.match(second.output, /FORWARDED_LOGIN_OK/);
+    assert.equal(approvals, 2);
+  });
+
+  it('verifies multiple forwarding hops and scopes the grant to the full path', async () => {
+    const onward = onwardCommand().replace(
+      'PubkeyAuthentication=unbound',
+      'PubkeyAuthentication=host-bound',
+    );
+    const nested = onward
+      .replace('/usr/bin/ssh ', '/usr/bin/ssh -A ')
+      .replace(
+        'printf FORWARDED_LOGIN_OK',
+        `'${onward.replaceAll("'", "'\\''")}'`,
+      );
+    const paths: number[] = [];
+    const result = await login(
+      `${onward} && ${nested} && ${nested}`,
+      { ...ssh, browserAgentForwarding: true },
+      false,
+      false,
+      () => true,
+      false,
+      (_user, _signal, _initial, destination) => {
+        assert.equal(destination?.canRemember, true);
+        paths.push(destination.forwardingHostFingerprints.length);
+        return 'session';
+      },
+    );
+    assert.equal(
+      result.output.split('FORWARDED_LOGIN_OK').length - 1,
+      3,
+      result.output,
+    );
+    assert.deepEqual(paths, [1, 2]);
+  });
+
   describe('ssh-add imported identities', () => {
     beforeEach(async () => {
       await new Promise<void>((resolve, reject) => {
@@ -373,6 +449,26 @@ describe('browser-key real OpenSSH login', function integrationSuite() {
           );
           assert.match(signed.output, /IMPORTED_LOGIN_OK/);
           assert.equal(signs, 1);
+          let remembered = 0;
+          const reusable = await login(
+            `${onward} && ${onward}`,
+            { ...ssh, browserAgentForwarding: true },
+            false,
+            false,
+            () => true,
+            false,
+            (_user, _signal, _initial, destination) => {
+              assert.equal(destination?.canRemember, true);
+              remembered += 1;
+              return 'session';
+            },
+          );
+          assert.equal(
+            reusable.output.split('IMPORTED_LOGIN_OK').length - 1,
+            2,
+            reusable.output,
+          );
+          assert.equal(remembered, 1);
           const denied = await login(onward, {
             ...ssh,
             browserAgentForwarding: true,
